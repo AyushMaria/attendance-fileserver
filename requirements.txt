@@ -1,0 +1,6 @@
+pyzk
+openpyxl
+matplotlib
+Pillow
+Flask>=3.0
+gunicorn>=21.2
