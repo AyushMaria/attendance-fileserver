@@ -16,12 +16,14 @@ Environment variables:
     REPORT_TZ      timezone for displayed times (default Asia/Kolkata)
 """
 
+import hashlib
+import hmac
 import os
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from flask import (Flask, Response, abort, jsonify, request,
+from flask import (Flask, Response, abort, jsonify, redirect, request,
                    render_template_string, send_from_directory)
 from werkzeug.utils import secure_filename
 
@@ -142,6 +144,47 @@ def download(filename):
     return send_from_directory(STORAGE_DIR, name, as_attachment=True)
 
 
+def delete_token(filename):
+    """A per-file token derived from the login password.
+
+    Browsers attach basic-auth credentials automatically, including on
+    requests triggered by another site. Without this, a page you visited
+    elsewhere could POST to /delete and your browser would helpfully
+    authenticate it. Only someone who knows WEB_PASSWORD can compute a
+    valid token, so a forged request fails.
+    """
+    return hmac.new(WEB_PASSWORD.encode("utf-8"),
+                    filename.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+@app.post("/delete")
+def delete():
+    if not browser_authorized():
+        return needs_login()
+
+    # with no password configured the page is public, so deleting is off
+    if not (WEB_USER and WEB_PASSWORD):
+        abort(403)
+
+    raw = request.form.get("filename", "")
+    if "/" in raw or "\\" in raw or ".." in raw:
+        abort(400)
+    name = safe_name(raw)
+    if not name:
+        abort(400)
+
+    supplied = request.form.get("token", "")
+    if not hmac.compare_digest(supplied, delete_token(name)):
+        abort(403)
+
+    target = STORAGE_DIR / name
+    if not target.is_file():
+        abort(404)
+    target.unlink()
+
+    return redirect("/")
+
+
 @app.get("/health")
 def health():
     return jsonify({"ok": True, "files": len(stored_files())})
@@ -152,8 +195,12 @@ def index():
     if not browser_authorized():
         return needs_login()
     files = stored_files()
+    protected = bool(WEB_USER and WEB_PASSWORD)
+    if protected:
+        for row in files:
+            row["token"] = delete_token(row["name"])
     return render_template_string(
-        PAGE, files=files, unprotected=not (WEB_USER and WEB_PASSWORD),
+        PAGE, files=files, unprotected=not protected, can_delete=protected,
         now=datetime.now(REPORT_TZ))
 
 
@@ -190,6 +237,11 @@ PAGE = """<!doctype html>
   a.file{color:var(--navy);text-decoration:none;font-weight:500}
   a.file:hover{text-decoration:underline}
   td.right{text-align:right;color:var(--muted);white-space:nowrap}
+  form.del{margin:0}
+  button.del{font:inherit;font-size:13px;padding:4px 11px;border-radius:6px;
+    border:1px solid #eccbc7;background:#fff;color:#a3251c;cursor:pointer}
+  button.del:hover{background:#fbe9e7}
+  button.del:focus-visible{outline:2px solid #a3251c;outline-offset:1px}
   .empty{text-align:center;padding:52px 20px;color:var(--muted)}
   .foot{margin-top:16px;font-size:12.5px;color:var(--muted)}
   @media(max-width:560px){td.hide,th.hide{display:none}}
@@ -212,6 +264,7 @@ PAGE = """<!doctype html>
   <table>
     <thead><tr>
       <th>File</th><th class="right hide">Size</th><th class="right">Uploaded</th>
+      {% if can_delete %}<th></th>{% endif %}
     </tr></thead>
     <tbody>
     {% for f in files %}
@@ -219,11 +272,24 @@ PAGE = """<!doctype html>
         <td><a class="file" href="/files/{{ f.name }}">{{ f.name }}</a></td>
         <td class="right hide num">{{ f.size_label }}</td>
         <td class="right num">{{ f.modified.strftime('%d %b, %H:%M') }}</td>
+        {% if can_delete %}
+        <td class="right">
+          <form class="del" method="post" action="/delete"
+                onsubmit="return confirm('Delete {{ f.name }} from the server?\n\nThe copy on the attendance PC is not affected.');">
+            <input type="hidden" name="filename" value="{{ f.name }}">
+            <input type="hidden" name="token" value="{{ f.token }}">
+            <button class="del" type="submit">Delete</button>
+          </form>
+        </td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
   </table>
-  <p class="foot">Click a file to download it.</p>
+  <p class="foot">Click a file to download it.{% if can_delete %}
+    Deleting removes the server copy only &mdash; re-run
+    <span class="num">upload_reports.py all</span> on the attendance PC to
+    restore it.{% endif %}</p>
   {% else %}
   <div class="empty">
     <p>No files yet.</p>
