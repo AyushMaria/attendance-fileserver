@@ -1,0 +1,17 @@
+# Line endings, pinned so a Windows checkout cannot break anything.
+#
+# Git for Windows converts text files to CRLF on checkout by default. That
+# is harmless for Python, but a shell script with CRLF endings fails in Git
+# Bash with "$'\r': command not found" - so .sh files are forced to LF.
+# Batch files are forced to CRLF, which cmd.exe expects.
+
+* text=auto
+
+*.sh   text eol=lf
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ini  text eol=crlf
+
+*.png  binary
+*.jpg  binary
+*.xlsx binary

@@ -1,4 +1,33 @@
+# ---------------------------------------------------------------------------
+# Never commit a store's settings, reports or logs.
+# Each store keeps these locally; `git pull` leaves ignored files untouched.
+# ---------------------------------------------------------------------------
+
+# Per-store settings - hold the device IP and the upload token
+store_config.ini
+!store_config.example.ini
+
+# Reports are data, not code
+attendance_reports/
+*.xlsx
+*.xls
+*.csv
+
+# Logs written by the scripts
+*_log.txt
+
+# Server: local file storage when run outside Railway
 uploads/
+
+# Python
 __pycache__/
 *.pyc
-upload_log.txt
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
