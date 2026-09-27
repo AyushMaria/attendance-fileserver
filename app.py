@@ -101,17 +101,35 @@ def migrate_flat_files():
     """
     moved = 0
     for path in list(STORAGE_DIR.iterdir()):
-        if not path.is_file():
+        try:
+            if not path.is_file():
+                continue
+            folder, name = split_legacy_name(path.name)
+            folder = safe_folder(folder) if folder else UNSORTED
+            destination_dir = STORAGE_DIR / folder
+            destination_dir.mkdir(parents=True, exist_ok=True)
+            destination = destination_dir / name
+            # link-then-unlink instead of rename: a hard link fails if the
+            # destination already exists, so a file uploaded in the same
+            # instant is never overwritten by an older one being filed.
+            try:
+                os.link(path, destination)
+                path.unlink()
+            except (FileExistsError, FileNotFoundError):
+                raise
+            except OSError:
+                # filesystem without hard links: plain move, still refusing
+                # to overwrite
+                if destination.exists():
+                    continue
+                path.rename(destination)
+            moved += 1
+        except (FileExistsError, FileNotFoundError):
+            # FileExists: the destination is taken - leave this one alone.
+            # FileNotFound: the other server worker (gunicorn runs two,
+            # both doing this at startup) already moved it. Either way,
+            # carry on with the rest instead of abandoning the pass.
             continue
-        folder, name = split_legacy_name(path.name)
-        folder = safe_folder(folder) if folder else UNSORTED
-        destination_dir = STORAGE_DIR / folder
-        destination_dir.mkdir(parents=True, exist_ok=True)
-        destination = destination_dir / name
-        if destination.exists():
-            continue
-        path.rename(destination)
-        moved += 1
     return moved
 
 
