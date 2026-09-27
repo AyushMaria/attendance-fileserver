@@ -45,6 +45,17 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _startup():
+    """File any pre-folder uploads into per-store folders. Import-time, so
+    it runs under gunicorn too."""
+    try:
+        moved = migrate_flat_files()
+        if moved:
+            print(f"Filed {moved} legacy file(s) into store folders.")
+    except Exception as e:  # noqa: BLE001 - must never block startup
+        print(f"Could not migrate legacy files: {e}")
+
+
 def human_size(num_bytes):
     if num_bytes < 1024:
         return f"{num_bytes} B"
@@ -59,19 +70,78 @@ def safe_name(raw):
     return cleaned or None
 
 
-def stored_files():
-    rows = []
-    for path in STORAGE_DIR.iterdir():
+UNSORTED = "unsorted"
+
+
+def safe_folder(raw):
+    """Sanitise a store folder name. Returns None if unusable."""
+    cleaned = secure_filename(raw or "")
+    return cleaned or None
+
+
+def split_legacy_name(filename):
+    """Old uploads were flat and prefixed, e.g. store3_attendance_X.xlsx.
+    Split that into ("store3", "attendance_X.xlsx") so history can be filed
+    into the right folder. Returns (None, filename) when there is no prefix."""
+    stem, sep, rest = filename.partition("_")
+    # Only treat the first segment as a store name when what follows still
+    # looks like a report filename. Otherwise "attendance_2026-08-27.xlsx"
+    # would be filed into a folder called "attendance".
+    if sep and stem and rest.lower().startswith("attendance"):
+        return stem, rest
+    return None, filename
+
+
+def migrate_flat_files():
+    """Move any loose files at the top level into per-store subfolders.
+
+    Runs once at startup so files uploaded before folders existed are not
+    stranded. Never overwrites: if the destination is taken, the file is
+    left where it is for you to look at.
+    """
+    moved = 0
+    for path in list(STORAGE_DIR.iterdir()):
         if not path.is_file():
             continue
-        stat = path.stat()
-        rows.append({
-            "name": path.name,
-            "size": stat.st_size,
-            "size_label": human_size(stat.st_size),
-            "modified": datetime.fromtimestamp(stat.st_mtime, REPORT_TZ),
-        })
-    return sorted(rows, key=lambda r: r["modified"], reverse=True)
+        folder, name = split_legacy_name(path.name)
+        folder = safe_folder(folder) if folder else UNSORTED
+        destination_dir = STORAGE_DIR / folder
+        destination_dir.mkdir(parents=True, exist_ok=True)
+        destination = destination_dir / name
+        if destination.exists():
+            continue
+        path.rename(destination)
+        moved += 1
+    return moved
+
+
+def stored_files():
+    """Every file, grouped by the folder it sits in."""
+    rows = []
+    for folder_path in STORAGE_DIR.iterdir():
+        if not folder_path.is_dir():
+            continue
+        for path in folder_path.iterdir():
+            if not path.is_file():
+                continue
+            stat = path.stat()
+            rows.append({
+                "folder": folder_path.name,
+                "name": path.name,
+                "key": f"{folder_path.name}/{path.name}",
+                "size": stat.st_size,
+                "size_label": human_size(stat.st_size),
+                "modified": datetime.fromtimestamp(stat.st_mtime, REPORT_TZ),
+            })
+    return sorted(rows, key=lambda r: (r["folder"], -r["modified"].timestamp()))
+
+
+def grouped_files():
+    """[(folder, [rows...])] with the busiest-recent folder first."""
+    groups = {}
+    for row in stored_files():
+        groups.setdefault(row["folder"], []).append(row)
+    return sorted(groups.items(), key=lambda kv: kv[0])
 
 
 # ----------------------------------------------------------------- auth
@@ -117,11 +187,28 @@ def upload():
             "error": f"{Path(name).suffix or 'That file type'} is not accepted. "
                      f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"}), 400
 
-    destination = STORAGE_DIR / name
+    # Preferred: the uploader tells us which store it is. Older uploaders
+    # do not, so fall back to the prefix baked into the filename.
+    folder = safe_folder(request.form.get("folder", ""))
+    if folder:
+        # The uploader still sends "mall_attendance_X.xlsx" so it keeps
+        # working with the older flat server too. Inside the mall folder
+        # that prefix is redundant, so drop it.
+        if name.startswith(f"{folder}_"):
+            name = name[len(folder) + 1:]
+    else:
+        derived, name = split_legacy_name(name)
+        folder = safe_folder(derived) if derived else UNSORTED
+
+    destination_dir = STORAGE_DIR / folder
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination = destination_dir / name
     existed = destination.exists()
     uploaded.save(destination)
 
-    return jsonify({"stored": name,
+    return jsonify({"stored": f"{folder}/{name}",
+                    "folder": folder,
+                    "name": name,
                     "size": destination.stat().st_size,
                     "replaced": existed})
 
@@ -131,17 +218,22 @@ def api_files():
     """Used by the upload script to skip files the server already has."""
     if UPLOAD_TOKEN and request.headers.get("X-API-Token", "") != UPLOAD_TOKEN:
         return jsonify({"error": "Invalid or missing upload token."}), 401
-    return jsonify([{"name": r["name"], "size": r["size"]} for r in stored_files()])
+    return jsonify([{"name": r["key"], "folder": r["folder"],
+                     "size": r["size"]} for r in stored_files()])
 
 
-@app.get("/files/<path:filename>")
-def download(filename):
+@app.get("/files/<folder>/<path:filename>")
+def download(folder, filename):
     if not browser_authorized():
         return needs_login()
+    safe_dir = safe_folder(folder)
     name = safe_name(filename)
-    if not name or not (STORAGE_DIR / name).is_file():
+    if not safe_dir or not name:
+        abort(400)
+    target = STORAGE_DIR / safe_dir / name
+    if not target.is_file():
         abort(404)
-    return send_from_directory(STORAGE_DIR, name, as_attachment=True)
+    return send_from_directory(STORAGE_DIR / safe_dir, name, as_attachment=True)
 
 
 def delete_token(filename):
@@ -167,17 +259,22 @@ def delete():
         abort(403)
 
     raw = request.form.get("filename", "")
-    if "/" in raw or "\\" in raw or ".." in raw:
-        abort(400)
+    raw_folder = request.form.get("folder", "")
+    for value in (raw, raw_folder):
+        if "/" in value or "\\" in value or ".." in value:
+            abort(400)
+
     name = safe_name(raw)
-    if not name:
+    safe_dir = safe_folder(raw_folder)
+    if not name or not safe_dir:
         abort(400)
 
+    key = f"{safe_dir}/{name}"
     supplied = request.form.get("token", "")
-    if not hmac.compare_digest(supplied, delete_token(name)):
+    if not hmac.compare_digest(supplied, delete_token(key)):
         abort(403)
 
-    target = STORAGE_DIR / name
+    target = STORAGE_DIR / safe_dir / name
     if not target.is_file():
         abort(404)
     target.unlink()
@@ -194,14 +291,19 @@ def health():
 def index():
     if not browser_authorized():
         return needs_login()
-    files = stored_files()
+    groups = grouped_files()
+    total = sum(len(rows) for _, rows in groups)
     protected = bool(WEB_USER and WEB_PASSWORD)
     if protected:
-        for row in files:
-            row["token"] = delete_token(row["name"])
+        for _, rows in groups:
+            for row in rows:
+                row["token"] = delete_token(row["key"])
     return render_template_string(
-        PAGE, files=files, unprotected=not protected, can_delete=protected,
-        now=datetime.now(REPORT_TZ))
+        PAGE, groups=groups, total=total, unprotected=not protected,
+        can_delete=protected, now=datetime.now(REPORT_TZ))
+
+
+_startup()
 
 
 PAGE = """<!doctype html>
@@ -237,6 +339,12 @@ PAGE = """<!doctype html>
   a.file{color:var(--navy);text-decoration:none;font-weight:500}
   a.file:hover{text-decoration:underline}
   td.right{text-align:right;color:var(--muted);white-space:nowrap}
+  section{margin-bottom:26px}
+  section h2{font-size:13px;font-weight:600;text-transform:uppercase;
+    letter-spacing:.06em;color:var(--muted);margin:0 0 8px 2px;
+    display:flex;align-items:center;gap:8px}
+  .count{background:#e7ebf1;color:var(--navy);border-radius:999px;
+    padding:1px 8px;font-size:11px;letter-spacing:0}
   form.del{margin:0}
   button.del{font:inherit;font-size:13px;padding:4px 11px;border-radius:6px;
     border:1px solid #eccbc7;background:#fff;color:#a3251c;cursor:pointer}
@@ -250,7 +358,8 @@ PAGE = """<!doctype html>
 <body>
 <header><div class="wrap">
   <h1>Attendance files</h1>
-  <div class="sub">{{ files|length }} file{{ '' if files|length == 1 else 's' }}
+  <div class="sub">{{ total }} file{{ '' if total == 1 else 's' }} in
+    {{ groups|length }} folder{{ '' if groups|length == 1 else 's' }}
     &middot; {{ now.strftime('%d %b %Y, %H:%M') }}</div>
 </div></header>
 <main><div class="wrap">
@@ -260,40 +369,46 @@ PAGE = """<!doctype html>
     WEB_PASSWORD variables on your Railway service to require a login.</div>
   {% endif %}
 
-  {% if files %}
-  <table>
-    <thead><tr>
-      <th>File</th><th class="right hide">Size</th><th class="right">Uploaded</th>
-      {% if can_delete %}<th></th>{% endif %}
-    </tr></thead>
-    <tbody>
-    {% for f in files %}
-      <tr>
-        <td><a class="file" href="/files/{{ f.name }}">{{ f.name }}</a></td>
-        <td class="right hide num">{{ f.size_label }}</td>
-        <td class="right num">{{ f.modified.strftime('%d %b, %H:%M') }}</td>
-        {% if can_delete %}
-        <td class="right">
-          <form class="del" method="post" action="/delete"
-                onsubmit="return confirm('Delete {{ f.name }} from the server?\n\nThe copy on the attendance PC is not affected.');">
-            <input type="hidden" name="filename" value="{{ f.name }}">
-            <input type="hidden" name="token" value="{{ f.token }}">
-            <button class="del" type="submit">Delete</button>
-          </form>
-        </td>
-        {% endif %}
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  {% if groups %}
+  {% for folder, rows in groups %}
+  <section>
+    <h2>{{ folder }} <span class="count">{{ rows|length }}</span></h2>
+    <table>
+      <thead><tr>
+        <th>File</th><th class="right hide">Size</th><th class="right">Uploaded</th>
+        {% if can_delete %}<th></th>{% endif %}
+      </tr></thead>
+      <tbody>
+      {% for f in rows %}
+        <tr>
+          <td><a class="file" href="/files/{{ f.folder }}/{{ f.name }}">{{ f.name }}</a></td>
+          <td class="right hide num">{{ f.size_label }}</td>
+          <td class="right num">{{ f.modified.strftime('%d %b, %H:%M') }}</td>
+          {% if can_delete %}
+          <td class="right">
+            <form class="del" method="post" action="/delete"
+                  onsubmit="return confirm('Delete {{ f.folder }}/{{ f.name }} from the server?\n\nThe copy on the attendance PC is not affected.');">
+              <input type="hidden" name="folder" value="{{ f.folder }}">
+              <input type="hidden" name="filename" value="{{ f.name }}">
+              <input type="hidden" name="token" value="{{ f.token }}">
+              <button class="del" type="submit">Delete</button>
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endfor %}
   <p class="foot">Click a file to download it.{% if can_delete %}
     Deleting removes the server copy only &mdash; re-run
-    <span class="num">upload_reports.py all</span> on the attendance PC to
+    <span class="num">upload_reports.py all</span> on that store's PC to
     restore it.{% endif %}</p>
   {% else %}
   <div class="empty">
     <p>No files yet.</p>
-    <p>Run <span class="num">upload_reports.py</span> on the attendance PC.</p>
+    <p>Run <span class="num">upload_reports.py</span> on an attendance PC.</p>
   </div>
   {% endif %}
 </div></main>
