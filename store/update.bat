@@ -33,17 +33,20 @@ if errorlevel 1 (
 
 call :log "---- update started ----"
 
+REM "call" in front of every git command: if git is a batch-file wrapper
+REM rather than git.exe, running it without call would end this script.
+
 REM --- refuse to pull over hand-edited code files ----------------------------
-"%GIT%" diff --quiet 2>nul
+call "%GIT%" diff --quiet 2>nul
 if errorlevel 1 (
     call :log "FAILED: code files in this folder were edited by hand, which blocks updates."
     call :log "Settings belong in store\store_config.ini, not in the .py files."
     call :log "To discard the edits and update:  git checkout -- .   then run this again."
-    "%GIT%" status --short >> "%LOG%" 2>&1
+    call "%GIT%" status --short >> "%LOG%" 2>&1
     exit /b 1
 )
 
-"%GIT%" pull --ff-only >> "%LOG%" 2>&1
+call "%GIT%" pull --ff-only >> "%LOG%" 2>&1
 if errorlevel 1 (
     call :log "FAILED: git pull did not complete - see the lines above."
     findstr /C:"dubious ownership" "%LOG%" >nul 2>&1 && (
