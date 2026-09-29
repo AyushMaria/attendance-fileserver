@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Accounts · Attendance{% endblock %}
+{% block body %}
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+  <h1>Accounts</h1>
+  <a class="btn" href="{{ url_for('admin.new_user') }}">+ New account</a>
+</div>
+<p class="sub">Only you create accounts. Each Manager and CRO login belongs to one person on the device.</p>
+<div class="scroll"><table class="list">
+  <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Store / person</th><th>Status</th><th>Last sign-in</th></tr></thead>
+  <tbody>
+  {% for u in users %}
+    <tr>
+      <td><a href="{{ url_for('admin.edit_user', uid=u.id) }}">{{ u.username }}</a></td>
+      <td>{{ u.display_name }}</td>
+      <td>{{ {'owner':'Owner','manager':'Manager','cro':'CRO'}[u.role] }}</td>
+      <td>{% if u.role == 'manager' %}{{ u.covers or '—' }} · {% endif %}{% if u.emp_user_id %}{{ u.emp_store }} #{{ u.emp_user_id }} {{ u.emp_name or '' }}{% else %}—{% endif %}</td>
+      <td>{% if u.active %}{% if u.locked_until and u.locked_until > now_iso %}<span class="pill warn">locked</span>{% else %}<span class="pill good">active</span>{% endif %}{% else %}<span class="pill">inactive</span>{% endif %}</td>
+      <td class="nowrap">{{ u.last_login_at|localtime('%d %b, %H:%M') or 'never' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+<p class="small" style="margin-top:18px"><a href="{{ url_for('admin.backup') }}">Download a backup of the database</a>
+  <span class="muted">— accounts, leave history and punches. Do this weekly.</span></p>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Stores · Attendance{% endblock %}
+{% block body %}
+<h1>Stores</h1>
+<p class="sub">Start time + grace decides who's late. Before closing time, someone who hasn't punched shows as “not in yet”. Changes apply to every day, past ones included.</p>
+
+{% if new_key %}
+<div class="msg warn">
+  <b>New sync key for {{ new_key[0] }}.</b> It's shown only this once. Put it in that store's
+  <code>store\store_config.ini</code> under <code>[sync] sync_key</code>. The old key has stopped working.
+  <div class="secret" style="margin-top:8px">{{ new_key[1] }}</div>
+</div>
+{% endif %}
+
+<div class="stack">
+{% for s in stores %}
+  {% set r = s.row %}
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
+      <h2 style="margin:0">{{ r.display_name }} <span class="muted small">({{ r.store }})</span></h2>
+      <span class="small">
+        {% if not r.sync_key_hash %}<span class="pill bad">no sync key yet</span>
+        {% else %}<span class="{{ 'pill warn' if s.stale else 'pill good' }}">synced {{ r.last_sync_at|ago }}</span>{% endif %}
+        {% if r.last_sync_note %}<span class="muted"> · {{ r.last_sync_note }}</span>{% endif %}
+        <span class="muted"> · {{ s.staff }} on device</span>
+      </span>
+    </div>
+    {% if r.clock_warning %}<div class="msg warn" style="margin-top:8px">{{ r.clock_warning }}</div>{% endif %}
+    <form method="post" action="{{ url_for('admin.edit_store', store=r.store) }}" class="row" style="margin-top:10px;align-items:flex-end">
+      {{ csrf() }}
+      <div class="field" style="flex:2 1 160px"><label>Name</label><input type="text" name="display_name" value="{{ r.display_name }}" required></div>
+      <div class="field"><label>Start</label><input type="time" name="start_time" value="{{ r.start_time }}" required></div>
+      <div class="field"><label>Grace (min)</label><input type="number" name="grace_minutes" value="{{ r.grace_minutes }}" min="0" max="120" required></div>
+      <div class="field"><label>Closing</label><input type="time" name="close_time" value="{{ r.close_time }}" required></div>
+      <div class="field" style="flex:0 0 auto"><button type="submit" class="plain">Save</button></div>
+    </form>
+    <details class="more"><summary>Sync key</summary>
+      <form method="post" action="{{ url_for('admin.store_key', store=r.store) }}" style="margin-top:8px">
+        {{ csrf() }}<input type="hidden" name="action" value="enter">
+        <label for="k-{{ r.store }}">Enter key — paste <code>sync_key</code> from this store's settings file</label>
+        <div class="row"><div class="field" style="flex:1 1 260px;margin:0"><input id="k-{{ r.store }}" type="password" name="key" autocomplete="off" required></div>
+        <button type="submit">Enter key</button></div>
+      </form>
+      <form method="post" action="{{ url_for('admin.store_key', store=r.store) }}" style="margin-top:10px"
+            onsubmit="return confirm('Make a new key for {{ r.display_name }}? The current key stops working at once, so the store stops syncing until its settings file has the new one.');">
+        {{ csrf() }}<input type="hidden" name="action" value="create">
+        <button type="submit" class="plain small">Create new key</button>
+        <span class="small muted">only for replacing a key; the store's settings file must then be updated</span>
+      </form>
+    </details>
+  </div>
+{% endfor %}
+</div>
+
+<h2>Add a store</h2>
+<div class="card">
+  <form method="post" action="{{ url_for('admin.add_store') }}" class="row" style="align-items:flex-end">
+    {{ csrf() }}
+    <div class="field"><label>Store ID</label><input type="text" name="store" placeholder="mall" pattern="[a-z0-9][a-z0-9_\-]*" required autocapitalize="none"></div>
+    <div class="field" style="flex:2 1 160px"><label>Name</label><input type="text" name="display_name" placeholder="Mall" required></div>
+    <div class="field"><label>Start</label><input type="time" name="start_time" value="09:00" required></div>
+    <div class="field"><label>Grace (min)</label><input type="number" name="grace_minutes" value="10" min="0" max="120" required></div>
+    <div class="field"><label>Closing</label><input type="time" name="close_time" value="21:00" required></div>
+    <div class="field" style="flex:0 0 auto"><button type="submit">Add store</button></div>
+  </form>
+  <p class="small muted" style="margin:0">Use the same ID as <code>[store] name</code> in the store's settings file (mall, nirala).</p>
+</div>
+
+<h2>Comp-off settings (every store)</h2>
+<div class="card">
+  <form method="post" action="{{ url_for('admin.comp_settings') }}" class="row" style="align-items:flex-end">
+    {{ csrf() }}
+    <div class="field"><label>Minimum hours worked on a weekly off</label><input type="number" step="0.5" min="0.5" max="24" name="comp_min_hours" value="{{ '%g'|format(cfg.min_hours) }}" required></div>
+    <div class="field"><label>Can cover leave up to (days before or after)</label><input type="number" min="0" max="365" name="comp_window_days" value="{{ cfg.window_days }}" required></div>
+    <div class="field"><label>Earned from (empty = switched off)</label><input type="date" name="comp_from" value="{{ cfg.comp_from.isoformat() if cfg.comp_from else '' }}"></div>
+    <div class="field" style="flex:0 0 auto"><button type="submit" class="plain">Save</button></div>
+  </form>
+  <p class="small muted" style="margin:0">Changing these re-works comp-offs for every past day. Each change is kept in the activity log.</p>
+</div>
+
+<p class="small" style="margin-top:22px"><a href="{{ url_for('admin.backup') }}">Download a backup of the database</a>
+  <span class="muted">— accounts, leave history and punches. Do this weekly.</span></p>
+{% endblock %}

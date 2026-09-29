@@ -1,0 +1,32 @@
+{% macro kcls(code) -%}
+{%- if code == 'A*' -%}k-As{%- elif code -%}k-{{ code }}{%- else -%}k-none{%- endif -%}
+{%- endmacro %}
+
+{% macro short(code) -%}
+{%- if code == 'NOT_IN_YET' -%}·{%- elif code == 'NODATA' -%}░{%- elif code -%}{{ code }}{%- endif -%}
+{%- endmacro %}
+
+{% macro badge(code, plus=false) -%}
+<span class="code {{ kcls(code) }}" title="{{ CODE_LABELS.get(code, '') }}">{{ short(code) }}{% if plus %}⁺{% endif %}</span>
+{%- endmacro %}
+
+{% macro legend(show_plus=true) %}
+<div class="legend">
+  <span>{{ badge('P') }}present</span><span>{{ badge('LT') }}late</span>
+  <span>{{ badge('WO') }}weekly off</span><span>{{ badge('L') }}leave</span>
+  <span>{{ badge('CO') }}leave covered by comp-off</span>
+  <span>{{ badge('A*') }}absent, leave pending</span><span>{{ badge('A') }}absent</span>
+  <span>{{ badge('NOT_IN_YET') }}not in yet</span><span>{{ badge('NODATA') }}no punches at the store</span>
+  {% if show_plus %}<span>{{ badge('P', true) }}worked a weekly off, earned a comp-off</span>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endmacro %}
+
+{% macro status_pill(status) -%}
+<span class="pill {{ {'approved':'good','rejected':'bad','pending':'warn'}.get(status, '') }}">{{ status|capitalize }}</span>
+{%- endmacro %}
+
+{% macro span(start, end) -%}
+{%- if start == end -%}{{ start|isodate }}{%- else -%}{{ start|isodate }} – {{ end|isodate }}{%- endif -%}
+{%- endmacro %}

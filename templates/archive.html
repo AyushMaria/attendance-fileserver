@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Archive · Attendance{% endblock %}
+{% block body %}
+<h1>Old reports</h1>
+<p class="sub">The Excel reports uploaded before the calendars. Read-only: download only.</p>
+{% if not groups %}<p class="muted">No old reports.</p>{% endif %}
+{% for folder, files in groups %}
+<details class="card" style="margin-bottom:12px" {{ 'open' if loop.first }}>
+  <summary><b>{{ folder }}</b> <span class="muted">({{ files|length }})</span></summary>
+  <table class="list" style="margin-top:10px">
+    <tbody>
+    {% for name, size in files %}
+      <tr><td><a href="{{ url_for('admin.archive_file', folder=folder, name=name) }}">{{ name }}</a></td>
+        <td class="muted small num" style="text-align:right">{{ (size / 1024)|round|int }} KB</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</details>
+{% endfor %}
+{% endblock %}

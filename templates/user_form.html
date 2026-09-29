@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}{{ 'Edit ' ~ u.username if u else 'New account' }} · Attendance{% endblock %}
+{% block body %}
+<div style="max-width:620px">
+<h1>{{ 'Edit ' ~ u.username if u else 'New account' }}</h1>
+{% if error %}<div class="msg error" role="alert">{{ error }}</div>{% endif %}
+<div class="card">
+<form method="post">
+  {{ csrf() }}
+  {% if not u %}
+  <div class="field"><label for="un">Username</label>
+    <input id="un" type="text" name="username" value="{{ form.get('username', '') }}" required autocapitalize="none" pattern="[A-Za-z0-9._\-]{2,40}"></div>
+  {% endif %}
+  <div class="field"><label for="dn">Display name</label>
+    <input id="dn" type="text" name="display_name" value="{{ form.get('display_name', '') }}" required></div>
+  <div class="field"><label>Role</label>
+    {% for value, label in [('cro', 'CRO — requests own leave, sees own attendance'), ('manager', 'Manager — calendars, approvals and weekly offs for their store(s)'), ('owner', 'Owner — everything')] %}
+      <label class="check" style="display:flex"><input type="radio" name="role" value="{{ value }}" {{ 'checked' if form.get('role', 'cro') == value }}> {{ label }}</label>
+    {% endfor %}
+  </div>
+  <div class="field" id="person-field"><label for="pe">Person on the device (Managers and CROs)</label>
+    <select id="pe" name="person">
+      <option value="">— choose —</option>
+      {% for e in people %}<option value="{{ e.store }}:{{ e.user_id }}" {{ 'selected' if form.get('person') == e.store ~ ':' ~ e.user_id }}>{{ e.store }} · #{{ e.user_id }} {{ e.name }}{{ '' if e.on_device else ' (no longer on device)' }}</option>{% endfor %}
+    </select>
+    <div class="small muted">People who already have a login aren't listed.</div></div>
+  <div class="field" id="stores-field"><label>Stores this Manager covers</label>
+    {% for s in stores %}<label class="check"><input type="checkbox" name="stores" value="{{ s }}" {{ 'checked' if s in covers }}> {{ s }}</label>{% endfor %}
+  </div>
+  {% if not u %}
+  <div class="field"><label for="pw">Password</label>
+    <input id="pw" type="text" name="password" autocomplete="new-password" minlength="8" placeholder="leave empty to generate one">
+    <div class="small muted">At least 8 characters. Leave it empty and a 12-character one is made and shown once.</div></div>
+  {% endif %}
+  <button type="submit">{{ 'Save' if u else 'Create account' }}</button>
+  <a class="btn plain" href="{{ url_for('admin.users') }}">Back</a>
+</form>
+</div>
+
+{% if u %}
+<h2>Password</h2>
+<div class="card">
+  <form method="post" action="{{ url_for('admin.user_action', uid=u.id, action='reset') }}">
+    {{ csrf() }}
+    <div class="field"><label for="np">New password</label>
+      <input id="np" type="text" name="password" autocomplete="new-password" placeholder="leave empty to generate one"></div>
+    <button type="submit" class="plain">Reset password</button>
+    <span class="small muted">Signs {{ u.display_name }} out everywhere and unlocks the account.</span>
+  </form>
+</div>
+<h2>Access</h2>
+<div class="card">
+  {% if u.active %}
+  <form class="inline" method="post" action="{{ url_for('admin.user_action', uid=u.id, action='deactivate') }}"
+        onsubmit="return confirm('Deactivate {{ u.username }}? They are signed out at once and can\'t sign in. Their history stays.');">
+    {{ csrf() }}<button type="submit" class="danger">Deactivate</button></form>
+  {% else %}
+  <form class="inline" method="post" action="{{ url_for('admin.user_action', uid=u.id, action='reactivate') }}">
+    {{ csrf() }}<button type="submit" class="plain">Reactivate</button></form>
+  {% endif %}
+  <form class="inline" method="post" action="{{ url_for('admin.user_action', uid=u.id, action='delete') }}"
+        onsubmit="return confirm('Delete {{ u.username }}? This is only for accounts made by mistake.');">
+    {{ csrf() }}<button type="submit" class="danger">Delete</button></form>
+  <p class="small muted" style="margin-bottom:0">Delete only works for an account with no leave or weekly-off history.
+    Last sign-in: {{ u.last_login_at|localtime or 'never' }}{% if u.last_login_ip %} from {{ u.last_login_ip }}{% endif %}.</p>
+</div>
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  function sync() {
+    var r = document.querySelector('input[name=role]:checked'); r = r ? r.value : '';
+    document.getElementById('person-field').style.display = r === 'owner' ? 'none' : '';
+    document.getElementById('stores-field').style.display = r === 'manager' ? '' : 'none';
+  }
+  document.querySelectorAll('input[name=role]').forEach(function (e) { e.addEventListener('change', sync); });
+  sync();
+})();
+</script>
+{% endblock %}

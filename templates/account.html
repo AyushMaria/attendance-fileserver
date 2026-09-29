@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Your account · Attendance{% endblock %}
+{% block body %}
+<h1>Your account</h1>
+<p class="sub">{{ me.display_name }} · <b>{{ me.username }}</b> · {{ me.role|capitalize if me.role != 'cro' else 'CRO' }}
+  {% if me.emp_user_id %} · {{ me.emp_store }} #{{ me.emp_user_id }}{% endif %}</p>
+
+<div class="card" style="max-width:520px">
+  <p class="small muted" style="margin-top:0">Last sign-in: {{ me.last_login_at|localtime or 'never' }}
+    {% if me.last_login_ip %} from {{ me.last_login_ip }}{% endif %}.
+    If that wasn't you, change your password now.</p>
+  <h2 style="margin-top:0">Change password</h2>
+  <form method="post">
+    {{ csrf() }}<input type="hidden" name="action" value="password">
+    <div class="field"><label for="c">Current password</label>
+      <input id="c" type="password" name="current" autocomplete="current-password" required></div>
+    <div class="field"><label for="n">New password (at least 8 characters)</label>
+      <input id="n" type="password" name="new" autocomplete="new-password" minlength="8" required></div>
+    <div class="field"><label for="a">New password again</label>
+      <input id="a" type="password" name="again" autocomplete="new-password" minlength="8" required></div>
+    <button type="submit">Change password</button>
+    <p class="small muted">This signs you out on every other device.</p>
+  </form>
+  <h2>Sign out everywhere</h2>
+  <form method="post">
+    {{ csrf() }}<input type="hidden" name="action" value="signout_all">
+    <button type="submit" class="plain">Sign out on every device</button>
+  </form>
+</div>
+{% endblock %}

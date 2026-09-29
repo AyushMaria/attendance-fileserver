@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, legend, status_pill, span, csrf %}
+{% block title %}{{ emp.name or emp.user_id }} · {{ first.strftime('%B %Y') }}{% endblock %}
+{% block body %}
+<h1>{{ 'My attendance' if is_self else (emp.name or emp.user_id) }} · {{ first.strftime('%B %Y') }}</h1>
+<p class="sub">{{ store.display_name }} · #{{ emp.user_id }}{% if not is_self %} {{ emp.name }}{% endif %}
+  · weekly off: <b>{{ wo_now|weekdays }}</b>{% if wo_from %} (from {{ wo_from|isodate }}){% endif %}
+  {% if not emp.on_device %} · <span class="pill">no longer on the device</span>{% endif %}</p>
+
+<div class="pager">
+  <a class="btn small plain" href="{{ url_for('main.person', store=store.store, user_id=emp.user_id, month=prev) }}">◄ Previous</a>
+  <form method="get" action="{{ url_for('main.person_jump', store=store.store, user_id=emp.user_id) }}">
+    <input type="month" name="m" value="{{ first.strftime('%Y-%m') }}" aria-label="Month"><button class="small plain" type="submit">Go</button>
+  </form>
+  <a class="btn small plain" href="{{ url_for('main.person', store=store.store, user_id=emp.user_id, month=next) }}">Next ►</a>
+  {% if first.strftime('%Y-%m') != this_month %}<a class="btn small plain" href="{{ url_for('main.person', store=store.store, user_id=emp.user_id, month=this_month) }}">This month</a>{% endif %}
+  {% if is_self %}<a class="btn small" href="{{ url_for('leave.my_leave') }}">Request leave</a>{% endif %}
+</div>
+
+<table class="cal">
+  <thead><tr>{% for n in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}<th>{{ n }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for week in weeks %}
+    <tr>
+    {% for c in week %}
+      {% if c is none %}<td class="pad"></td>
+      {% else %}
+      <td class="{{ 'is-today' if c.day == today }}" title="{{ CODE_LABELS.get(c.code, '') }}{% if c.note %} — {{ c.note }}{% endif %}{% if c.comp_note %} · {{ c.comp_note }}{% endif %}">
+        <div class="d">{{ c.day.day }}</div>
+        {% if c.code %}{{ badge(c.code, c.comp_earned) }}{% elif c.leave and c.leave.status in ('approved','pending') %}<span class="small muted">{{ 'leave' if c.leave.status == 'approved' else 'requested' }}</span>{% elif c.weekly_off %}<span class="small muted">off</span>{% endif %}
+        {% if c.punches %}<div class="t">{{ c.punches[0].strftime('%H:%M') }}{% if c.last %}–{{ c.last.strftime('%H:%M') }}{% endif %}</div>{% endif %}
+      </td>
+      {% endif %}
+    {% endfor %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{{ legend() }}
+
+<div class="stats" style="margin-top:14px">
+  <span><b>{{ totals.present }}</b> present</span><span><b>{{ totals.LT }}</b> late</span>
+  <span><b>{{ totals.WO }}</b> weekly off</span><span><b>{{ totals.L }}</b> leave</span>
+  <span><b>{{ totals.CO }}</b> comp-off</span><span><b>{{ totals.unapproved }}</b> unapproved</span>
+</div>
+
+<h2>Comp-offs</h2>
+{% if not comp_on and not credits %}
+  <p class="muted small">Comp-offs aren't switched on yet.</p>
+{% elif not credits %}
+  <p class="muted small">None yet. Working {{ '%g'|format(cfg.min_hours) }} hours or more on a weekly off earns one; it covers an approved leave day up to {{ cfg.window_days }} days before or after.</p>
+{% else %}
+<table class="list">
+  <thead><tr><th>Weekly off worked</th><th>Status</th>{% if can_act %}<th></th>{% endif %}</tr></thead>
+  <tbody>
+  {% for c in credits|reverse %}
+    <tr>
+      <td>{{ c.day|isodate }}{% if c.hours %} <span class="muted small">({{ '%.1f'|format(c.hours) }} h)</span>{% endif %}{% if c.granted %} <span class="pill">granted</span>{% endif %}</td>
+      <td>{% if c.status == 'used' %}used for leave on {{ c.covers|isodate }}{% elif c.status == 'available' %}<span class="pill good">available</span> until {{ c.until|isodate }}{% else %}<span class="pill">expired</span> {{ c.until|isodate }}{% endif %}</td>
+      {% if can_act %}<td>
+        <details class="more"><summary>Cancel</summary>
+          <form method="post" action="{{ url_for('leave.comp_adjust', kind='cancel') }}" style="margin-top:6px">
+            {{ csrf() }}<input type="hidden" name="person" value="{{ store.store }}:{{ emp.user_id }}">
+            <input type="hidden" name="day" value="{{ c.day.isoformat() }}"><input type="hidden" name="back" value="{{ request.path }}">
+            <input type="text" name="note" placeholder="Why (required)" required maxlength="300">
+            <button class="small danger" type="submit" style="margin-top:6px">Cancel this comp-off</button>
+          </form></details></td>{% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Leave requests</h2>
+{% if not leaves %}<p class="muted small">None.</p>{% else %}
+<table class="list">
+  <tbody>
+  {% for l in leaves %}
+    <tr>
+      <td class="nowrap">{{ span(l.start_date, l.end_date) }}</td>
+      <td>{{ status_pill(l.status) }}</td>
+      <td>{{ l.staff_comment }}{% if l.manager_comment %}<div class="small muted">— {{ l.decided_by_name or '' }}: “{{ l.manager_comment }}”</div>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

@@ -3,7 +3,7 @@
 # Each store keeps these locally; `git pull` leaves ignored files untouched.
 # ---------------------------------------------------------------------------
 
-# Per-store settings - hold the device IP and the upload token
+# Per-store settings - hold the device IP and the sync key
 store_config.ini
 !store_config.example.ini
 
@@ -16,8 +16,12 @@ attendance_reports/
 # Logs written by the scripts
 *_log.txt
 
-# Server: local file storage when run outside Railway
+# Server: local files when run outside Railway
 uploads/
+instance/
+
+# Store: marks that the first full sync was accepted
+.full_sync_done
 
 # Python
 __pycache__/

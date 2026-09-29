@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge %}
+{% block title %}Home · Attendance{% endblock %}
+{% block body %}
+<h1>Today · {{ today|isodate }}</h1>
+<p class="sub">
+  {% if pending %}<a href="{{ url_for('leave.approvals') }}"><b>{{ pending }}</b> leave request{{ 's' if pending != 1 }} waiting for you</a>
+  {% else %}No leave requests waiting.{% endif %}
+  {% if own_month %} · <a href="{{ url_for('main.person', store=me.emp_store, user_id=me.emp_user_id, month=own_month) }}">My attendance</a>{% endif %}
+</p>
+
+{% if not cards %}
+  <div class="card">
+    {% if me.role == 'owner' %}
+      <p style="margin-top:0">No stores yet.</p>
+      <a class="btn" href="{{ url_for('admin.stores') }}">Add the stores</a>
+    {% else %}
+      <p style="margin:0">You haven't been given any stores yet. Ask the Owner.</p>
+    {% endif %}
+  </div>
+{% endif %}
+
+<div class="cards">
+{% for c in cards %}
+  {% set s = c.row %}{% set t = c.totals %}
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+      <h2 style="margin:0">{{ s.display_name }}</h2>
+      <span class="small {{ 'pill warn' if c.stale else 'muted' }}">synced {{ s.last_sync_at|ago }}</span>
+    </div>
+    <div class="stats" style="margin-top:10px">
+      <span>{{ badge('P') }} <b>{{ t.present }}</b> present</span>
+      <span>{{ badge('LT') }} <b>{{ t.LT }}</b> late</span>
+      <span>{{ badge('WO') }} <b>{{ t.WO }}</b> weekly off</span>
+      <span>{{ badge('L') }} <b>{{ t.L + t.CO }}</b> leave</span>
+      <span>{{ badge('A') }} <b>{{ t.unapproved }}</b> unapproved</span>
+      <span>{{ badge('NOT_IN_YET') }} <b>{{ t.NOT_IN_YET }}</b> not in yet</span>
+    </div>
+    <a class="btn small" href="{{ url_for('main.day', store=s.store, day=today.isoformat()) }}">Today</a>
+    <a class="btn small plain" href="{{ url_for('main.month', store=s.store, month=today.strftime('%Y-%m')) }}">This month</a>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}

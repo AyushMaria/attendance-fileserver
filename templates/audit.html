@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Activity · Attendance{% endblock %}
+{% block body %}
+<h1>Activity</h1>
+<p class="sub">Who did what, newest first (last 300). Times are local.</p>
+<div class="pager">
+  {% for k, label in [('', 'Everything'), ('login', 'Sign-ins'), ('leave', 'Leave'), ('comp', 'Comp-offs'), ('weekly_off', 'Weekly offs'), ('user', 'Accounts'), ('store', 'Stores'), ('settings', 'Settings'), ('sync', 'Syncs')] %}
+    <a class="btn small {{ '' if kind == k else 'plain' }}" href="{{ url_for('admin.audit_log', kind=k or None) }}">{{ label }}</a>
+  {% endfor %}
+</div>
+<div class="scroll"><table class="list">
+  <thead><tr><th>When</th><th>Who</th><th>What</th><th>Details</th><th>IP</th></tr></thead>
+  <tbody>
+  {% for r, d in rows %}
+    <tr>
+      <td class="nowrap num">{{ r.at|localtime('%d %b %H:%M:%S') }}</td>
+      <td>{{ r.username or ('store' if r.action.startswith('sync') else '—') }}</td>
+      <td class="nowrap">{{ r.action }} <span class="muted">{{ r.target }}</span></td>
+      <td class="small">{% for k, v in d.items() %}{{ k }}: {{ v }}{{ '; ' if not loop.last }}{% endfor %}</td>
+      <td class="small muted">{{ r.ip }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endblock %}

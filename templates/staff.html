@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Weekly offs · Attendance{% endblock %}
+{% block body %}
+<h1>Weekly offs</h1>
+<p class="sub">A change applies from its date onwards, so past months stay as they were. Until someone's weekly off is set
+  (even to “none”), their off days show as absences.</p>
+
+{% for store, people in groups %}
+<h2>{{ store.display_name }}</h2>
+{% if not people %}<p class="muted">No staff yet. They appear after the store's first sync.</p>{% else %}
+<div class="scroll"><table class="list">
+  <thead><tr><th>#</th><th>Name</th><th>Login</th><th>Weekly off</th><th></th></tr></thead>
+  <tbody>
+  {% for x in people %}
+    {% set p = x.p %}
+    <tr id="p-{{ store.store }}-{{ p.user_id }}" style="{{ 'opacity:.55' if not p.on_device }}">
+      <td class="num">{{ p.user_id }}</td>
+      <td>{{ p.name or '—' }}{% if not p.on_device %}<div class="small muted">no longer on the device{% if x.login and x.login.active %} — deactivate their login{% endif %}</div>{% endif %}</td>
+      <td>{% if x.login %}{{ x.login.username }}{% if not x.login.active %} <span class="pill">inactive</span>{% endif %}{% else %}<span class="muted">none</span>{% endif %}</td>
+      <td>{% if x.days is none %}<span class="pill warn">not set</span>{% else %}{{ x.days|weekdays }}{% if x['from'] %} <span class="small muted">from {{ x['from']|isodate }}</span>{% endif %}{% endif %}
+        {% for eff, d in x.upcoming %}<div class="small muted">→ {{ d|weekdays }} from {{ eff|isodate }}</div>{% endfor %}</td>
+      <td>{% if x.can_act %}
+        <details class="more"><summary>Change</summary>
+          <form method="post" action="{{ url_for('admin.set_weekly_off') }}" style="margin-top:6px;min-width:250px">
+            {{ csrf() }}<input type="hidden" name="person" value="{{ store.store }}:{{ p.user_id }}">
+            <div>{% for i in range(7) %}<label class="check"><input type="checkbox" name="days" value="{{ i }}" {{ 'checked' if x.days and i in x.days }}> {{ weekday_names[i][:3] }}</label>{% endfor %}</div>
+            <label class="check"><input type="checkbox" name="none"> No weekly off</label>
+            <div class="field" style="margin-top:6px"><label>From</label><input type="date" name="from" value="{{ today.isoformat() }}" required></div>
+            <button type="submit" class="small">Save</button>
+          </form></details>
+        {% elif me.role == 'manager' %}<span class="small muted">Owner sets this</span>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+{% endfor %}
+{% endblock %}

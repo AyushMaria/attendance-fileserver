@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, span, csrf %}
+{% block title %}Approvals · Attendance{% endblock %}
+{% block body %}
+<h1>Approvals</h1>
+
+<h2>Waiting for you ({{ pending|length }})</h2>
+{% if not pending %}<p class="muted">Nothing waiting.</p>{% endif %}
+<div class="stack">
+{% for r, text in pending %}
+  <div class="card">
+    <div><b>{{ r.store }} · {{ r.user_id }} {{ r.emp_name or '' }}</b>
+      <span class="muted small">{{ {'cro': 'CRO', 'manager': 'Manager'}.get(r.emp_role, '') }}</span></div>
+    <div>{{ span(r.start_date, r.end_date) }} · {{ text }}</div>
+    <div class="muted">“{{ r.staff_comment }}”</div>
+    <form method="post" action="{{ url_for('leave.decide', leave_id=r.id) }}" class="row" style="margin-top:8px;align-items:flex-end">
+      {{ csrf() }}
+      <div class="field" style="flex:1 1 220px;margin:0"><label for="c{{ r.id }}">Comment (optional)</label>
+        <input id="c{{ r.id }}" type="text" name="comment" maxlength="{{ max_comment }}"></div>
+      <div><button name="decision" value="approve" type="submit">Approve</button>
+        <button name="decision" value="reject" type="submit" class="danger">Reject</button></div>
+    </form>
+  </div>
+{% endfor %}
+</div>
+
+<h2>Record leave for someone</h2>
+<div class="card">
+  {% if not people %}<p class="muted" style="margin:0">There's nobody you can record leave for yet.</p>{% else %}
+  <form method="post" action="{{ url_for('leave.record') }}">
+    {{ csrf() }}
+    <div class="row">
+      <div class="field" style="flex:2 1 220px"><label for="rp">Person</label>
+        <select id="rp" name="person" required>
+          {% for e in people %}<option value="{{ e.store }}:{{ e.user_id }}">{{ e.store }} · {{ e.user_id }} {{ e.name }}</option>{% endfor %}
+        </select></div>
+      <div class="field"><label for="rf">From</label><input id="rf" type="date" name="from" required></div>
+      <div class="field"><label for="rt">To</label><input id="rt" type="date" name="to" required></div>
+    </div>
+    <div class="field"><label for="rn">Note</label><input id="rn" type="text" name="note" maxlength="{{ max_comment }}" placeholder="e.g. phoned in sick"></div>
+    <button type="submit">Record as approved</button>
+  </form>
+  {% endif %}
+</div>
+
+<h2>Comp-offs to check (last 30 days)</h2>
+{% if not checks %}<p class="muted">Nobody worked a weekly off in the last 30 days.</p>{% else %}
+<div class="scroll"><table class="list">
+  <thead><tr><th>Person</th><th>Day</th><th>In</th><th>Comp-off</th><th></th></tr></thead>
+  <tbody>
+  {% for c in checks %}
+    <tr>
+      <td class="nowrap">{{ c.emp.store }} · {{ c.emp.user_id }} {{ c.emp.name }}</td>
+      <td class="nowrap">{{ c.day|isodate }}</td>
+      <td class="nowrap num">{% if c.span %}{{ c.span[0].strftime('%H:%M') }}–{{ c.span[1].strftime('%H:%M') }} ({{ '%.0f'|format(c.hours) if c.hours >= 1 else '%.1f'|format(c.hours) }} h){% else %}—{% endif %}</td>
+      <td>{{ c.where }}{% if c.granted %} <span class="pill">granted</span>{% endif %}</td>
+      <td>
+        <details class="more"><summary>{{ 'Cancel' if c.credit else 'Grant' }}</summary>
+          <form method="post" action="{{ url_for('leave.comp_adjust', kind=('cancel' if c.credit else 'grant')) }}" style="margin-top:6px;min-width:200px">
+            {{ csrf() }}<input type="hidden" name="person" value="{{ c.emp.store }}:{{ c.emp.user_id }}">
+            <input type="hidden" name="day" value="{{ c.day.isoformat() }}">
+            <input type="text" name="note" placeholder="Why (required)" required maxlength="300">
+            <button class="small {{ 'danger' if c.credit else '' }}" type="submit" style="margin-top:6px">{{ 'Cancel comp-off' if c.credit else 'Grant comp-off' }}</button>
+          </form></details>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+<h2>Decided in the last 30 days</h2>
+{% if not decided %}<p class="muted">None.</p>{% else %}
+<div class="scroll"><table class="list">
+  <tbody>
+  {% for r in decided %}
+    <tr>
+      <td class="nowrap">{{ r.store }} · {{ r.user_id }} {{ r.emp_name or '' }}</td>
+      <td class="nowrap">{{ span(r.start_date, r.end_date) }}</td>
+      <td>{{ status_pill(r.status) }} <span class="small muted">by {{ r.decided_by_name or '?' }}</span></td>
+      <td>“{{ r.staff_comment }}”{% if r.manager_comment %}<div class="small muted">{{ r.manager_comment }}</div>{% endif %}</td>
+      <td>{% if r.status == 'approved' %}
+        <details class="more"><summary>Withdraw</summary>
+          <form method="post" action="{{ url_for('leave.withdraw', leave_id=r.id) }}" style="margin-top:6px;min-width:200px">
+            {{ csrf() }}<input type="text" name="reason" placeholder="Why (required)" required maxlength="300">
+            <button class="small danger" type="submit" style="margin-top:6px">Withdraw leave</button>
+          </form></details>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+{% endblock %}

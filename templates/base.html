@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{% block head %}{% endblock %}
+<title>{% block title %}Attendance{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <a class="brand" href="{{ url_for('main.home') }}">Attendance</a>
+  {% if me %}
+  <nav aria-label="Main">
+    {% set ep = request.endpoint or '' %}
+    <a href="{{ url_for('main.home') }}" class="{{ 'on' if ep == 'main.home' }}">{{ 'My attendance' if me.role == 'cro' else 'Home' }}</a>
+    {% if me.role in ('cro', 'manager') %}
+      <a href="{{ url_for('leave.my_leave') }}" class="{{ 'on' if ep.startswith('leave.my') }}">{{ 'Leave' if me.role == 'cro' else 'My leave' }}</a>
+    {% endif %}
+    {% if me.role in ('owner', 'manager') %}
+      <a href="{{ url_for('leave.approvals') }}" class="{{ 'on' if ep == 'leave.approvals' }}">Approvals{% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}</a>
+      <a href="{{ url_for('admin.staff') }}" class="{{ 'on' if ep == 'admin.staff' }}">Weekly offs</a>
+    {% endif %}
+    {% if me.role == 'owner' %}
+      <a href="{{ url_for('admin.stores') }}" class="{{ 'on' if ep == 'admin.stores' }}">Stores</a>
+      <a href="{{ url_for('admin.users') }}" class="{{ 'on' if ep.startswith('admin.') and 'user' in ep }}">Accounts</a>
+      <a href="{{ url_for('admin.audit_log') }}" class="{{ 'on' if ep == 'admin.audit_log' }}">Activity</a>
+      <a href="{{ url_for('admin.archive') }}" class="{{ 'on' if ep == 'admin.archive' }}">Archive</a>
+    {% endif %}
+  </nav>
+  <div class="who">
+    <a href="{{ url_for('auth.account') }}" style="color:inherit">{{ me.display_name }}</a>
+    <form method="post" action="{{ url_for('auth.logout') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">Sign out</button>
+    </form>
+  </div>
+  {% endif %}
+</div></header>
+<main><div class="wrap">
+  {% for store, text in (sync_warnings or []) %}<div class="msg warn">⚠ {{ text }}</div>{% endfor %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for cat, text in messages %}<div class="msg {{ cat }}" role="status">{{ text }}</div>{% endfor %}
+  {% endwith %}
+  {% block body %}{% endblock %}
+</div></main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

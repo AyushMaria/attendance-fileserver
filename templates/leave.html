@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status_pill, span, csrf %}
+{% block title %}Leave · Attendance{% endblock %}
+{% block body %}
+<div style="max-width:560px">
+<h1>Leave</h1>
+<p class="sub">{{ me.display_name }} · {{ me.emp_store }}{% if me.role == 'manager' %} · your requests go to the Owner{% endif %}</p>
+
+<div class="card">
+  <h2 style="margin-top:0">Request leave</h2>
+  {% if error %}<div class="msg error" role="alert">{{ error }}</div>{% endif %}
+  <form method="post" id="leave-form">
+    {{ csrf() }}
+    <div class="row">
+      <div class="field"><label for="f">From</label><input id="f" type="date" name="from" value="{{ form['from'] }}" required></div>
+      <div class="field"><label for="t">To</label><input id="t" type="date" name="to" value="{{ form['to'] }}" required></div>
+    </div>
+    <p id="preview" class="small" aria-live="polite" style="margin:0 0 10px"></p>
+    <div class="field"><label for="r">Reason</label>
+      <textarea id="r" name="reason" maxlength="{{ max_comment }}" required>{{ form['reason'] }}</textarea></div>
+    <button type="submit">Send request</button>
+  </form>
+  {% if credits %}
+    <p class="small" style="margin-bottom:0">You have <b>{{ credits|length }}</b> comp-off{{ 's' if credits|length != 1 }}:
+      {% for c in credits %}worked {{ c.day|isodate }}, usable until {{ c.until|isodate }}{{ '; ' if not loop.last }}{% endfor %}.
+      An approved leave uses them automatically.</p>
+  {% endif %}
+</div>
+
+<h2>Your requests</h2>
+{% if not requests %}<p class="muted">None yet.</p>{% else %}
+<table class="list">
+  <tbody>
+  {% for r, n in requests %}
+    <tr>
+      <td class="nowrap">{{ span(r.start_date, r.end_date) }}<div class="small muted">{{ n }} working day{{ 's' if n != 1 }}</div></td>
+      <td>{{ status_pill(r.status) }}</td>
+      <td>{{ r.staff_comment }}
+        {% if r.manager_comment %}<div class="small muted">— {{ r.decided_by_name or '' }}: “{{ r.manager_comment }}”</div>{% endif %}
+        {% if r.status == 'pending' %}
+        <form class="inline" method="post" action="{{ url_for('leave.cancel_leave', leave_id=r.id) }}">
+          {{ csrf() }}<button class="small plain" type="submit" style="margin-top:4px">Cancel request</button></form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var f = document.getElementById('f'), t = document.getElementById('t'), out = document.getElementById('preview');
+  function update() {
+    if (f.value && !t.value) t.value = f.value;
+    if (!f.value || !t.value) { out.textContent = ''; return; }
+    fetch('{{ url_for('leave.my_leave_preview') }}?from=' + f.value + '&to=' + t.value, {credentials: 'same-origin'})
+      .then(function (r) { return r.json(); })
+      .then(function (d) { out.textContent = d.text || ''; })
+      .catch(function () { out.textContent = ''; });
+  }
+  f.addEventListener('change', update); t.addEventListener('change', update); update();
+})();
+</script>
+{% endblock %}

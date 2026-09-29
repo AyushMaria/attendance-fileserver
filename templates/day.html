@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, legend %}
+{% block head %}{% if is_today %}<meta http-equiv="refresh" content="300">{% endif %}{% endblock %}
+{% block title %}{{ store.display_name }} · {{ day|dayfmt }}{% endblock %}
+{% block body %}
+<h1>{{ store.display_name }} · {{ day.strftime('%A') }} {{ day.day }} {{ day.strftime('%B %Y') }}</h1>
+<div class="pager">
+  <a class="btn small plain" href="{{ url_for('main.day', store=store.store, day=prev) }}">◄ Previous</a>
+  <form method="get" action="{{ url_for('main.day_jump', store=store.store) }}">
+    <input type="date" name="d" value="{{ day.isoformat() }}" aria-label="Date"><button class="small plain" type="submit">Go</button>
+  </form>
+  <a class="btn small plain" href="{{ url_for('main.day', store=store.store, day=next) }}">Next ►</a>
+  {% if not is_today %}<a class="btn small plain" href="{{ url_for('main.day', store=store.store, day=today.isoformat()) }}">Today</a>{% endif %}
+  <a class="btn small plain" href="{{ url_for('main.month', store=store.store, month=day.strftime('%Y-%m')) }}">Month</a>
+  <span class="small muted" style="margin-left:auto">synced {{ store.last_sync_at|ago }}{% if is_today %} · refreshes every 5 min{% endif %}</span>
+</div>
+
+{% if day > today %}
+  <div class="card">This day hasn't happened yet.</div>
+{% elif not store_open %}
+  <div class="card">{{ badge('NODATA') }} Nobody at the store punched on this day. That usually means a holiday, or the device or PC being offline.</div>
+{% endif %}
+
+{% if day <= today %}
+<div class="stats">
+  <span><b>{{ counts.present }}</b> present ({{ counts.LT }} late{% if counts.on_wo %}, {{ counts.on_wo }} on weekly off{% endif %})</span>
+  <span><b>{{ counts.WO }}</b> weekly off</span>
+  <span><b>{{ counts.L }}</b> leave</span>
+  <span><b>{{ counts.CO }}</b> comp-off</span>
+  <span><b>{{ counts.unapproved }}</b> unapproved</span>
+  {% if is_today %}<span><b>{{ counts.NOT_IN_YET }}</b> not in yet</span>{% endif %}
+</div>
+{% endif %}
+
+{% if timeline %}
+<h2>Timeline</h2>
+<div class="timeline">
+  <div class="tl-row tl-axis" aria-hidden="true"><span></span>
+    <svg>{% for x, label in timeline.ticks %}<text class="{{ 'minor' if loop.index0 % 3 }}" x="{{ x }}%" y="12" font-size="11" fill="#8a919c" text-anchor="middle">{{ label }}</text>{% endfor %}</svg><span></span></div>
+  {% for b in timeline.bars %}
+  {% set c = b.cell %}
+  <div class="tl-row">
+    <span class="who"><a href="{{ url_for('main.person', store=store.store, user_id=b.person.user_id, month=day.strftime('%Y-%m')) }}">{{ b.person.name or b.person.user_id }}</a> <span class="muted small">{{ b.person.user_id }}</span></span>
+    <svg role="img" aria-label="{{ b.person.name }}: {{ b.tip }}">
+      <title>{{ b.person.name }} — punches: {{ b.tip }}</title>
+      {% for x, _l in timeline.ticks %}<line x1="{{ x }}%" x2="{{ x }}%" y1="0" y2="22" stroke="#eef0f3"/>{% endfor %}
+      <line x1="{{ timeline.start_x }}%" x2="{{ timeline.start_x }}%" y1="0" y2="22" stroke="#9aa1ab" stroke-dasharray="3 3"/>
+      {% if b.x2 > b.x1 %}<line x1="{{ b.x1 }}%" x2="{{ b.x2 }}%" y1="11" y2="11" stroke="{{ '#d9a400' if b.late else '#4f86c6' }}" stroke-width="5" stroke-linecap="round" opacity=".55"/>{% endif %}
+      {% for x, t in b.dots %}<circle cx="{{ x }}%" cy="11" r="4.5" fill="{{ '#b78900' if b.late and loop.first else '#1f3a5f' }}"><title>{{ t }}</title></circle>{% endfor %}
+    </svg>
+    <span class="when">{{ c.punches[0].strftime('%H:%M') }}{% if c.last %} – {{ c.last.strftime('%H:%M') }}{% else %} · no check-out{% endif %}
+      {% if b.late %} {{ badge('LT') }}{% endif %}{% if c.weekly_off %} <span class="pill" title="Worked on their weekly off">WO{% if c.comp_earned %}⁺{% endif %}</span>{% endif %}</span>
+  </div>
+  {% endfor %}
+  <p class="small muted" style="margin:6px 0 0">Dashed line: {{ timeline.start_label }}. Hover a bar for every punch.</p>
+</div>
+{% endif %}
+
+{% if absent and day <= today %}
+<h2>Not in</h2>
+<table class="list">
+  <tbody>
+  {% for p, c in absent %}
+    <tr>
+      <td class="nowrap"><a href="{{ url_for('main.person', store=store.store, user_id=p.user_id, month=day.strftime('%Y-%m')) }}">{{ p.name or '—' }}</a> <span class="muted small">{{ p.user_id }}</span></td>
+      <td>{{ badge(c.code) }}</td>
+      <td>{{ CODE_LABELS.get(c.code, '') }}{% if c.note %} — {{ c.note }}{% endif %}
+        {% if c.leave and c.leave.status == 'approved' and c.leave.decided_by_name %}<span class="muted"> (approved by {{ c.leave.decided_by_name }})</span>{% endif %}
+        {% if c.comp_note %}<div class="small muted">{{ c.comp_note }}</div>{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{{ legend(false) }}
+{% endblock %}

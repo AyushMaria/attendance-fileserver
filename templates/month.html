@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, kcls, short, legend %}
+{% block title %}{{ store.display_name }} · {{ first.strftime('%B %Y') }}{% endblock %}
+{% block body %}
+<h1>{{ store.display_name }} · {{ first.strftime('%B %Y') }}</h1>
+<div class="pager">
+  <a class="btn small plain" href="{{ url_for('main.month', store=store.store, month=prev) }}">◄ Previous</a>
+  <form method="get" action="{{ url_for('main.month_jump', store=store.store) }}">
+    <input type="month" name="m" value="{{ first.strftime('%Y-%m') }}" aria-label="Month"><button class="small plain" type="submit">Go</button>
+  </form>
+  <a class="btn small plain" href="{{ url_for('main.month', store=store.store, month=next) }}">Next ►</a>
+  <a class="btn small plain" href="{{ url_for('main.month', store=store.store, month=this_month) }}">This month</a>
+  <a class="btn small plain" href="{{ url_for('main.day', store=store.store, day=today.isoformat()) }}">Today's view</a>
+  <form method="get" style="margin-left:auto">
+    <input type="text" name="who" value="{{ who }}" placeholder="Find a person" aria-label="Find a person" style="width:150px;font-size:14px;padding:5px 8px">
+    {% if show_all %}<input type="hidden" name="all" value="1">{% endif %}
+    <button class="small plain" type="submit">Filter</button>
+  </form>
+  <a class="small" href="{{ url_for('main.month', store=store.store, month=first.strftime('%Y-%m'), all=(None if show_all else 1), who=(who or None)) }}">{{ 'Hide people no longer on the device' if show_all else 'Show people no longer on the device' }}</a>
+</div>
+
+{% if not rows %}
+  <div class="card">No staff yet. They appear after the store's first sync.</div>
+{% else %}
+<div class="gridwrap">
+<table class="grid">
+  <thead><tr>
+    <th class="name">Person</th>
+    {% for d in days %}<th class="{{ 'today' if d == today }} {{ 'wk' if d.weekday() >= 5 }}" title="{{ d|dayfmt }}"><a href="{{ url_for('main.day', store=store.store, day=d.isoformat()) }}" style="color:inherit;text-decoration:none">{{ d.day }}<br><span style="font-weight:400">{{ 'MTWTFSS'[d.weekday()] }}</span></a></th>{% endfor %}
+    <th class="first" title="Present (incl. late)">Pres</th><th title="Late">Late</th><th title="Weekly off">WO</th>
+    <th title="Leave">Leave</th><th title="Comp-off">CO</th><th title="Unapproved absences (A and A*)">Unappr</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    {% set p = r.person %}
+    <tr class="{{ 'off' if not p.on_device }}">
+      <td class="name"><a href="{{ url_for('main.person', store=store.store, user_id=p.user_id, month=first.strftime('%Y-%m')) }}">{{ p.user_id }} {{ p.name }}</a></td>
+      {% for c in r.cells %}
+        {% if c.code %}
+          {% set info = {
+              'title': (p.name or p.user_id) ~ ' · ' ~ (c.day|dayfmt),
+              'code': CODE_LABELS.get(c.code, ''),
+              'times': c.punches|map('strftime_hm')|join(', '),
+              'no_out': c.no_checkout,
+              'note': c.note, 'comp': c.comp_note,
+              'by': (c.leave.decided_by_name if c.leave and c.leave.status == 'approved' else ''),
+              'wo': c.weekly_off } %}
+          <td><button type="button" class="cellbtn code {{ kcls(c.code) }}" data-info="{{ info|tojson|forceescape }}"
+              aria-label="{{ info.title }}: {{ info.code }}">{{ short(c.code) }}{% if c.comp_earned %}<sup>+</sup>{% endif %}</button></td>
+        {% else %}<td></td>{% endif %}
+      {% endfor %}
+      {% set t = r.totals %}
+      <td class="tot first">{{ t.present }}</td><td class="tot">{{ t.LT }}</td><td class="tot">{{ t.WO }}</td>
+      <td class="tot">{{ t.L }}</td><td class="tot">{{ t.CO }}</td><td class="tot">{{ t.unapproved }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+  <tfoot><tr>
+    <td class="name">In that day</td>
+    {% for n in headcount %}<td class="num">{{ '' if n is none else n }}</td>{% endfor %}
+    <td colspan="6"></td>
+  </tr></tfoot>
+</table>
+</div>
+{{ legend() }}
+<p class="small muted">Click a day for details. Totals count up to today and leave out days with no punches at the store.</p>
+{% endif %}
+
+<div class="panel" id="panel" hidden role="dialog" aria-live="polite">
+  <button class="close" type="button" aria-label="Close">×</button>
+  <div id="panel-body"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var panel = document.getElementById('panel'), body = document.getElementById('panel-body');
+  function el(tag, text, cls) { var e = document.createElement(tag); if (cls) e.className = cls; e.textContent = text; return e; }
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest('.cellbtn');
+    if (b) {
+      var i = JSON.parse(b.getAttribute('data-info'));
+      body.innerHTML = '';
+      body.appendChild(el('b', i.title));
+      body.appendChild(el('div', i.code + (i.wo && i.code !== 'Weekly off' ? ' · weekly off day' : '')));
+      if (i.times) body.appendChild(el('div', 'Punches: ' + i.times + (i.no_out ? ' (no check-out)' : ''), 'muted'));
+      if (i.note) body.appendChild(el('div', i.note));
+      if (i.by) body.appendChild(el('div', 'Approved by ' + i.by, 'muted'));
+      if (i.comp) body.appendChild(el('div', i.comp));
+      panel.hidden = false;
+      return;
+    }
+    if (ev.target.closest('.close') || !ev.target.closest('#panel')) panel.hidden = true;
+  });
+  document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') panel.hidden = true; });
+})();
+</script>
+{% endblock %}
