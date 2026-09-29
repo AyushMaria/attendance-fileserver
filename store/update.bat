@@ -56,7 +56,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
-for /f "delims=" %%c in ('"%GIT%" log -1 --format^="%%h %%s (%%cr)"') do call :log "Now at: %%c"
+REM Never change anything ABOVE the pull line: this file is still running while
+REM git replaces it, and Windows carries on reading the new copy from the same
+REM byte position. Lines below the pull are safe to change.
+REM Record which version is now in place. git is called directly, like the pull
+REM above: running it inside for /f made cmd strip the quotes off its path.
+REM --oneline has no % signs, which "call" would expand a second time.
+<nul set /p "=[%DATE% %TIME:~0,8%] Now at: " >> "%LOG%"
+call "%GIT%" log -1 --oneline --no-decorate >> "%LOG%" 2>&1
 call :log "---- update finished ----"
 exit /b 0
 
