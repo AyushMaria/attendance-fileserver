@@ -125,10 +125,22 @@ def parse_ts(text):
     return datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
 
 
+# Any date outside this range is refused wherever dates come in (forms,
+# addresses, the store sync), so date arithmetic can never overflow.
+MIN_DATE = date(2000, 1, 1)
+MAX_DATE = date(2100, 12, 31)
+
+
+def in_range(d):
+    return MIN_DATE <= d <= MAX_DATE
+
+
 def daterange(first, last):
     d = first
     while d <= last:
         yield d
+        if d == date.max:
+            return
         d += timedelta(days=1)
 
 
@@ -385,8 +397,8 @@ class StoreData:
                     continue
                 if d in spans:                        # came in: not a leave day
                     continue
-                if d < self.today and not self.store_open_on(d):
-                    continue                          # nobody worked that day anyway
+                if d <= self.today and not self.store_open_on(d):
+                    continue                          # nobody worked that day: shows as no data
                 if active_leave(d, leaves) is not lv:
                     continue
                 leave_days.add(d)

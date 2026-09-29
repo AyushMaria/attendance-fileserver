@@ -13,6 +13,7 @@ from flask import Blueprint, jsonify, request
 
 import clock
 import db
+from attendance import MIN_DATE
 
 bp = Blueprint("api", __name__)
 
@@ -66,17 +67,25 @@ def sync():
     # validate everything before writing anything
     now_local = clock.now_local()
     received = db.utc_now_iso()
-    rows, future = [], []
+    rows, future, impossible = [], [], []
     for p in punches:
         try:
             uid = str(p["user_id"]).strip()
             ts = datetime.strptime(str(p["ts"]), "%Y-%m-%d %H:%M:%S")
             code = p.get("punch")
             code = int(code) if code is not None else None
-        except (KeyError, TypeError, ValueError, AttributeError):
+        except (KeyError, TypeError, ValueError, AttributeError, OverflowError):
             return jsonify({"error": f"Punch not understood: {p!r:.200}"}), 400
-        if not uid:
-            return jsonify({"error": "A punch has no user_id."}), 400
+        if not uid or len(uid) > 32:
+            return jsonify({"error": "A punch has a missing or overlong user_id."}), 400
+        if code is not None and not -1000 <= code <= 1000:
+            return jsonify({"error": f"Punch type out of range: {code}"}), 400
+        # A date the calendars could never show means the device clock (or
+        # that record) is badly wrong. Skip it and warn, rather than refuse
+        # the batch: one corrupt record must not stop the store syncing.
+        if ts.year < MIN_DATE.year or ts > now_local + timedelta(days=366):
+            impossible.append(ts)
+            continue
         if ts > now_local + timedelta(days=1):
             future.append(ts)
         stamp = ts.strftime("%Y-%m-%d %H:%M:%S")
@@ -85,11 +94,11 @@ def sync():
     people = []
     for s in staff:
         try:
-            people.append((str(s["user_id"]).strip(), str(s.get("name") or "").strip()))
+            people.append((str(s["user_id"]).strip(), str(s.get("name") or "").strip()[:100]))
         except (KeyError, TypeError, AttributeError):
             return jsonify({"error": f"Staff entry not understood: {s!r:.200}"}), 400
-    if any(not uid for uid, _ in people):
-        return jsonify({"error": "A staff entry has no user_id."}), 400
+    if any(not uid or len(uid) > 32 for uid, _ in people):
+        return jsonify({"error": "A staff entry has a missing or overlong user_id."}), 400
 
     before = conn.total_changes
     conn.executemany(
@@ -121,9 +130,17 @@ def sync():
             "VALUES (?,?,'',0,?,?)", (store, uid, received, received))
 
     note = f"{len(rows)} received, {new} new"
-    if future:
-        warning = (f"{len(future)} punch(es) dated in the future (latest {max(future):%d %b %Y %H:%M}). "
-                   f"The device clock is probably wrong - check it.")
+    if impossible:
+        note += f", {len(impossible)} skipped"
+    if future or impossible:
+        parts = []
+        if future:
+            parts.append(f"{len(future)} punch(es) dated in the future "
+                         f"(latest {max(future):%d %b %Y %H:%M})")
+        if impossible:
+            parts.append(f"{len(impossible)} punch(es) with impossible dates were skipped "
+                         f"(e.g. {impossible[0]:%Y-%m-%d %H:%M})")
+        warning = "; ".join(parts) + ". The device clock is probably wrong - check it."
         conn.execute("UPDATE stores SET clock_warning=? WHERE store=?", (warning, store))
     elif has_staff:
         conn.execute("UPDATE stores SET clock_warning='' WHERE store=?", (store,))

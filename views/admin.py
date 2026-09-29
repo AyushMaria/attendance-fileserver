@@ -7,7 +7,7 @@ import re
 import secrets
 import sqlite3
 import tempfile
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from flask import (Blueprint, abort, after_this_request, current_app, flash, g, redirect,
@@ -161,9 +161,11 @@ def comp_settings():
     raw_from = request.form.get("comp_from", "").strip()
     if raw_from:
         try:
-            date.fromisoformat(raw_from)
+            chosen = date.fromisoformat(raw_from)
         except ValueError:
-            flash("The start date isn't a valid date.", "error")
+            chosen = None
+        if chosen is None or chosen.year < 2020 or chosen > clock.today() + timedelta(days=366):
+            flash("The start date must be a real date between 2020 and a year from now.", "error")
             return redirect(url_for("admin.stores"))
     if not (0.5 <= hours <= 24 and 0 <= window <= 365):
         flash("Hours must be between 0.5 and 24, and days between 0 and 365.", "error")

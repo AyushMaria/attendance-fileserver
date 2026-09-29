@@ -7,7 +7,7 @@ from flask import abort, g
 import auth
 import clock
 import db
-from attendance import StoreRules
+from attendance import MAX_DATE, StoreRules, in_range
 
 SYNC_STALE_MINUTES = 60
 
@@ -28,17 +28,23 @@ def require_store(store):
 
 def parse_day(text):
     try:
-        return date.fromisoformat(text)
+        d = date.fromisoformat(text)
     except (TypeError, ValueError):
         abort(404)
+    if not in_range(d):
+        abort(404)
+    return d
 
 
 def parse_month(text):
     try:
         y, m = (int(x) for x in text.split("-"))
-        return date(y, m, 1)
+        d = date(y, m, 1)
     except (AttributeError, TypeError, ValueError):
         abort(404)
+    if not in_range(d) or d.year >= MAX_DATE.year:
+        abort(404)
+    return d
 
 
 def shift_month(first, delta):

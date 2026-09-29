@@ -208,7 +208,12 @@ def login():
                 # right password, deactivated account: same message, logged
                 db.audit(conn, row["id"], "login.inactive", username, ip=client_ip())
             elif row is not None:
-                failures = row["failed_logins"] + 1
+                # count in the database itself: the two server processes
+                # don't share memory, so read-then-write could lose a count
+                conn.execute("UPDATE users SET failed_logins = failed_logins + 1 WHERE id=?",
+                             (row["id"],))
+                failures = conn.execute("SELECT failed_logins FROM users WHERE id=?",
+                                        (row["id"],)).fetchone()[0]
                 if failures >= MAX_FAILURES:
                     locked = now + timedelta(minutes=LOCK_MINUTES)
                     conn.execute("UPDATE users SET failed_logins=0, locked_until=? WHERE id=?",
@@ -216,9 +221,6 @@ def login():
                     until = current_app.jinja_env.filters["localtime"](iso(locked))
                     error = (f"Wrong username or password. The account is now locked "
                              f"for {LOCK_MINUTES} minutes, until {until}.")
-                else:
-                    conn.execute("UPDATE users SET failed_logins=? WHERE id=?",
-                                 (failures, row["id"]))
                 db.audit(conn, None, "login.fail", username, ip=client_ip())
             else:
                 db.audit(conn, None, "login.fail", username, ip=client_ip())

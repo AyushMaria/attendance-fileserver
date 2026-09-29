@@ -21,6 +21,9 @@ def leave_problem(conn, store, user_id, start, end, comment):
     """Why this leave can't be saved, or None."""
     if start is None or end is None:
         return "Choose both dates."
+    today = clock.today()
+    if not (today - timedelta(days=366) <= start and end <= today + timedelta(days=366)):
+        return "Leave can only be for dates within a year of today - check the year."
     if end < start:
         return "The end date is before the start date."
     if (end - start).days + 1 > MAX_SPAN_DAYS:
@@ -117,7 +120,7 @@ def my_leave_preview():
         end = date.fromisoformat(request.args.get("to", ""))
     except ValueError:
         return jsonify({"text": ""})
-    if end < start or (end - start).days + 1 > MAX_SPAN_DAYS:
+    if leave_problem(db.get_db(), store, "-", start, end, "") is not None:
         return jsonify({"text": ""})
     text, _n, _covered = preview_text(db.get_db(), store, user_id, start, end)
     return jsonify({"text": text + (" if approved" if _covered else "")})
@@ -328,8 +331,8 @@ def comp_adjust(kind):
     back = request.form.get("back") or url_for("leave.approvals")
     if not back.startswith("/") or back.startswith("//"):
         back = url_for("leave.approvals")
-    if day is None or day > clock.today():
-        flash("Choose a day that has already happened.", "error")
+    if day is None or day > clock.today() or day < clock.today() - timedelta(days=366):
+        flash("Choose a day in the last year that has already happened.", "error")
         return redirect(back)
     if not note:
         flash("Give a reason - it's kept in the activity log.", "error")
