@@ -6,6 +6,10 @@
 <p class="sub">{{ me.display_name }} · <b>{{ me.username }}</b> · {{ me.role|capitalize if me.role != 'cro' else 'CRO' }}
   {% if me.emp_user_id %} · {{ me.emp_store }} #{{ me.emp_user_id }}{% endif %}</p>
 
+{% if me.must_change_password %}
+<div class="msg warn" style="max-width:520px"><b>Choose your own password first.</b> You signed in with a
+  password you were given. Set one only you know — leave requests are recorded under your name.</div>
+{% endif %}
 <div class="card" style="max-width:520px">
   <p class="small muted" style="margin-top:0">Last sign-in: {{ me.last_login_at|localtime or 'never' }}
     {% if me.last_login_ip %} from {{ me.last_login_ip }}{% endif %}.

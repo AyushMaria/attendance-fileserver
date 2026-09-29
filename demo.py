@@ -51,6 +51,9 @@ def seed(conn, log=print):
         conn.execute("INSERT INTO stores (store, display_name, start_time, grace_minutes, close_time, "
                      "last_sync_at, last_sync_note) VALUES (?,?,?,?,?,?,?)",
                      (store, store.title(), start, grace, close, stamp, "demo data"))
+        for name, a, b in (("Morning", start, "19:00"), ("Evening", "13:00", close)):
+            conn.execute("INSERT INTO shifts (store, name, start_time, end_time, grace_minutes) "
+                         "VALUES (?,?,?,?,?)", (store, name, a, b, grace))
         for uid, name in STAFF[store]:
             conn.execute("INSERT INTO employees (store, user_id, name, on_device, first_seen, last_seen) "
                          "VALUES (?,?,?,?,?,?)", (store, uid, name, 1, stamp, stamp))
@@ -61,8 +64,9 @@ def seed(conn, log=print):
     punches = []
     wo_of = {}
     for store, people in STAFF.items():
-        start_h, start_m = (int(x) for x in HOURS[store][0].split(":"))
         for i, (uid, _name) in enumerate(people):
+            # every fourth person works the evening shift
+            start_h, start_m = (13, 0) if i % 4 == 3 else (int(x) for x in HOURS[store][0].split(":"))
             wo = 6 if i % 3 else (i % 7)                     # mostly Sunday, some others
             wo_of[(store, uid)] = wo
             if uid != "110":                                  # one person left unset

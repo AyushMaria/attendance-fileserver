@@ -31,7 +31,8 @@
   {% if not u %}
   <div class="field"><label for="pw">Password</label>
     <input id="pw" type="text" name="password" autocomplete="new-password" minlength="8" placeholder="leave empty to generate one">
-    <div class="small muted">At least 8 characters. Leave it empty and a 12-character one is made and shown once.</div></div>
+    <div class="small muted">At least 8 characters. Leave it empty and a 12-character one is made and shown once.</div>
+    <label class="check" style="margin-top:6px"><input type="checkbox" name="must_change" {{ 'checked' if form.get('must_change', 'on') == 'on' }}> They choose their own password at first sign-in</label></div>
   {% endif %}
   <button type="submit">{{ 'Save' if u else 'Create account' }}</button>
   <a class="btn plain" href="{{ url_for('admin.users') }}">Back</a>
@@ -45,6 +46,7 @@
     {{ csrf() }}
     <div class="field"><label for="np">New password</label>
       <input id="np" type="text" name="password" autocomplete="new-password" placeholder="leave empty to generate one"></div>
+    <label class="check"><input type="checkbox" name="must_change" checked> They choose their own password at next sign-in</label><br>
     <button type="submit" class="plain">Reset password</button>
     <span class="small muted">Signs {{ u.display_name }} out everywhere and unlocks the account.</span>
   </form>

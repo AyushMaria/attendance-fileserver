@@ -149,39 +149,52 @@ def day(store, day):
 
 def build_timeline(present, rules, d):
     """Geometry for the inline SVG: one bar per person from first to last
-    punch, a dashed line at start + grace. The same first-punch-in,
+    punch, grouped by the shift they were counted on, each group with a
+    dashed line at its start + grace. The same first-punch-in,
     last-punch-out rule the old daily Excel chart used."""
     if not present:
         return None
     hours = []
     for _p, c in present:
         hours += [t.hour + t.minute / 60 for t in c.punches]
+    end = rules.day_end
     lo = min([8.0] + [h - 0.5 for h in hours])
-    hi = max([rules.close_time.hour + rules.close_time.minute / 60 + 0.5, 18.0] + [h + 0.5 for h in hours])
-    lo, hi = float(int(lo)), float(int(hi) + 1 if hi % 1 else int(hi))
+    hi = max([end.hour + end.minute / 60 + 0.5, 18.0] + [h + 0.5 for h in hours])
+    lo, hi = float(int(lo)), float(min(24, int(hi) + 1 if hi % 1 else int(hi)))
     span = hi - lo
 
     def x(t):
-        return round((t.hour + t.minute / 60 + t.second / 3600 - lo) / span * 100, 3)
+        return round(max(0.0, min(100.0, (t.hour + t.minute / 60 + t.second / 3600 - lo) / span * 100)), 3)
 
-    late_at = datetime.combine(d, rules.late_after)
-    bars = []
+    groups = {}
     for p, c in present:
-        bars.append({
+        shift = c.shift
+        key = (shift.start, shift.name) if shift else (rules.start_time, "")
+        g = groups.setdefault(key, {"shift": shift, "bars": []})
+        g["bars"].append({
             "person": p, "cell": c,
             "x1": x(c.punches[0]), "x2": x(c.punches[-1]),
             "dots": [(x(t), t.strftime("%H:%M")) for t in c.punches],
             "late": c.code == "LT",
             "tip": ", ".join(t.strftime("%H:%M") for t in c.punches),
         })
+    out = []
+    for key in sorted(groups):
+        g = groups[key]
+        shift = g["shift"]
+        start, grace = (shift.start, shift.grace_minutes) if shift else (rules.start_time, rules.grace_minutes)
+        late_after = datetime.combine(d, shift.late_after if shift else rules.late_after).time()
+        title = (f"{shift.name} shift · {shift.start:%H:%M}–{shift.end:%H:%M}"
+                 if shift and shift.name else "")
+        out.append({"title": title, "bars": g["bars"], "start_x": x(late_after),
+                    "start_label": f"start {start:%H:%M} (+{grace} min)"})
     ticks = []
     h = int(lo)
     while h <= hi:
         label = f"{(h - 1) % 12 + 1}{'am' if h % 24 < 12 else 'pm'}"
         ticks.append((round((h - lo) / span * 100, 3), label))
         h += 1
-    return {"bars": bars, "ticks": ticks, "start_x": x(late_at.time()),
-            "start_label": f"start {rules.start_time:%H:%M} (+{rules.grace_minutes} min)"}
+    return {"groups": out, "ticks": ticks, "has_shifts": bool(rules.shifts)}
 
 
 # ----------------------------------------------------------------- person

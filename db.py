@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_at       TEXT,
     last_login_ip       TEXT,
     password_changed_at TEXT NOT NULL,
+    must_change_password INTEGER NOT NULL DEFAULT 0,
     CHECK ((role = 'owner') = (emp_user_id IS NULL)),
     UNIQUE (emp_store, emp_user_id)
 );
@@ -128,6 +129,17 @@ CREATE TABLE IF NOT EXISTS comp_adjustments (
     UNIQUE (store, user_id, day, kind)
 );
 
+-- a store's shifts; each day a person counts as on the shift whose start
+-- is closest to their first punch
+CREATE TABLE IF NOT EXISTS shifts (
+    id            INTEGER PRIMARY KEY,
+    store         TEXT NOT NULL REFERENCES stores(store),
+    name          TEXT NOT NULL,
+    start_time    TEXT NOT NULL,
+    end_time      TEXT NOT NULL,
+    grace_minutes INTEGER NOT NULL DEFAULT 10
+);
+
 CREATE INDEX IF NOT EXISTS idx_punches_day ON punches(store, day, user_id);
 CREATE INDEX IF NOT EXISTS idx_leaves_emp  ON leaves(store, user_id, start_date);
 CREATE INDEX IF NOT EXISTS idx_leaves_stat ON leaves(status);
@@ -157,9 +169,30 @@ def init_db(path):
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        migrate(conn)
         conn.commit()
     finally:
         conn.close()
+
+
+# Columns added after the first release: (table, column, definition).
+ADDED_COLUMNS = [
+    ("users", "must_change_password", "INTEGER NOT NULL DEFAULT 0"),
+]
+
+
+def migrate(conn):
+    """Add any newer columns to an existing database. Both server processes
+    run this at startup, so losing the race to the other one is fine."""
+    for table, column, definition in ADDED_COLUMNS:
+        have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column in have:
+            continue
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e):
+                raise
 
 
 def get_db():

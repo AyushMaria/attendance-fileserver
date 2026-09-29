@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Logins created · Attendance{% endblock %}
+{% block body %}
+<h1>{{ created|length }} CRO login{{ 's' if created|length != 1 }} created</h1>
+<p class="sub">Starting password for all of them: <b>{{ password }}</b>. Each person must choose their own the first time they sign in.
+  Print this page or copy it to hand the usernames out.</p>
+{% if created %}
+<div class="scroll"><table class="list">
+  <thead><tr><th>Store</th><th>#</th><th>Name</th><th>Username</th></tr></thead>
+  <tbody>
+  {% for e, username in created %}
+    <tr><td>{{ e.store }}</td><td class="num">{{ e.user_id }}</td><td>{{ e.name }}</td><td><b>{{ username }}</b></td></tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+{% if skipped %}
+<div class="msg warn" style="margin-top:14px">No username could be made for: {% for e in skipped %}{{ e.store }} #{{ e.user_id }} {{ e.name }}{{ ', ' if not loop.last }}{% endfor %}. Create those by hand.</div>
+{% endif %}
+<p style="margin-top:16px">To make someone a Manager, open their account from <a href="{{ url_for('admin.users') }}">Accounts</a>, change the role and tick their stores.</p>
+<p class="small muted">Tell each person: “This is your login for leave requests. Don't share it — requests are recorded under your name.”</p>
+{% endblock %}

@@ -16,7 +16,7 @@
 <div class="stack">
 {% for s in stores %}
   {% set r = s.row %}
-  <div class="card">
+  <div class="card" id="s-{{ r.store }}">
     <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px">
       <h2 style="margin:0">{{ r.display_name }} <span class="muted small">({{ r.store }})</span></h2>
       <span class="small">
@@ -35,6 +35,35 @@
       <div class="field"><label>Closing</label><input type="time" name="close_time" value="{{ r.close_time }}" required></div>
       <div class="field" style="flex:0 0 auto"><button type="submit" class="plain">Save</button></div>
     </form>
+    {% if s.shifts %}<p class="small muted" style="margin:-6px 0 8px">With shifts set, Start and Grace above aren't used for lateness. People who haven't come in show as “not in yet” until closing or the end of the last shift, whichever is later.</p>{% endif %}
+
+    <h3 style="font-size:14px;margin:6px 0 6px">Shifts</h3>
+    <p class="small muted" style="margin:0 0 8px">Each day, a person counts as on the shift whose start time is closest to their first punch, and is late after that shift's start + grace.{% if not s.shifts %} No shifts yet, so everyone is judged by the store's start time above.{% endif %}</p>
+    {% for sh in s.shifts %}
+    <div class="row" style="align-items:flex-end">
+      <form method="post" action="{{ url_for('admin.shift_action', shift_id=sh.id, action='edit') }}" class="row" style="flex:1 1 auto;align-items:flex-end;margin:0">
+        {{ csrf() }}
+        <div class="field" style="flex:2 1 120px"><label>Shift</label><input type="text" name="name" value="{{ sh.name }}" maxlength="30" required></div>
+        <div class="field"><label>Start</label><input type="time" name="start_time" value="{{ sh.start.strftime('%H:%M') }}" required></div>
+        <div class="field"><label>End</label><input type="time" name="end_time" value="{{ sh.end.strftime('%H:%M') }}" required></div>
+        <div class="field"><label>Grace (min)</label><input type="number" name="grace_minutes" value="{{ sh.grace_minutes }}" min="0" max="120" required></div>
+        <div class="field" style="flex:0 0 auto"><button type="submit" class="plain small">Save</button></div>
+      </form>
+      <form method="post" action="{{ url_for('admin.shift_action', shift_id=sh.id, action='delete') }}" class="field" style="flex:0 0 auto"
+            onsubmit="return confirm('Remove the {{ sh.name }} shift? Past days are re-worked with the remaining shifts.');">
+        {{ csrf() }}<button type="submit" class="danger small">Remove</button></form>
+    </div>
+    {% endfor %}
+    <details class="more" {{ 'open' if not s.shifts }} style="margin-bottom:8px"><summary>Add a shift</summary>
+      <form method="post" action="{{ url_for('admin.add_shift', store=r.store) }}" class="row" style="align-items:flex-end;margin-top:6px">
+        {{ csrf() }}
+        <div class="field" style="flex:2 1 120px"><label>Shift</label><input type="text" name="name" placeholder="Morning" maxlength="30" required></div>
+        <div class="field"><label>Start</label><input type="time" name="start_time" required></div>
+        <div class="field"><label>End</label><input type="time" name="end_time" required></div>
+        <div class="field"><label>Grace (min)</label><input type="number" name="grace_minutes" value="{{ r.grace_minutes }}" min="0" max="120" required></div>
+        <div class="field" style="flex:0 0 auto"><button type="submit" class="small">Add shift</button></div>
+      </form>
+    </details>
     <details class="more"><summary>Sync key</summary>
       <form method="post" action="{{ url_for('admin.store_key', store=r.store) }}" style="margin-top:8px">
         {{ csrf() }}<input type="hidden" name="action" value="enter">

@@ -49,21 +49,73 @@ class Leave:
         return self.start <= day <= self.end
 
 
+def _plus_minutes(t, minutes):
+    return (datetime.combine(date(2000, 1, 1), t) + timedelta(minutes=minutes)).time()
+
+
+def _minutes(t):
+    return t.hour * 60 + t.minute
+
+
+@dataclass
+class Shift:
+    name: str
+    start: time
+    end: time
+    grace_minutes: int
+    id: int = 0
+
+    @property
+    def late_after(self):
+        """The last on-time minute: start + grace."""
+        return _plus_minutes(self.start, self.grace_minutes)
+
+    @property
+    def label(self):
+        return f"{self.name} {self.start:%H:%M}–{self.end:%H:%M}" if self.name else ""
+
+
 @dataclass
 class StoreRules:
     start_time: time
     grace_minutes: int
     close_time: time
+    shifts: list = field(default_factory=list)     # [Shift], sorted by start
 
     @property
     def late_after(self):
-        """The last on-time minute: start + grace."""
-        t = datetime.combine(date(2000, 1, 1), self.start_time) + timedelta(minutes=self.grace_minutes)
-        return t.time()
+        """The last on-time minute: start + grace (store-wide times)."""
+        return _plus_minutes(self.start_time, self.grace_minutes)
+
+    @property
+    def day_end(self):
+        """When 'not in yet' turns into absent: closing time, or the end of
+        the last shift if that is later."""
+        return max([self.close_time] + [s.end for s in self.shifts])
+
+    def shift_for(self, first_punch):
+        """The shift someone is counted on: the one whose start is closest
+        to their first punch (the earlier one on a tie). With no shifts
+        set, the store's own start time and grace."""
+        if not self.shifts:
+            return Shift("", self.start_time, self.close_time, self.grace_minutes)
+        at = first_punch.hour * 60 + first_punch.minute
+        return min(self.shifts, key=lambda s: (abs(at - _minutes(s.start)), _minutes(s.start)))
+
+    def is_late(self, first_punch):
+        shift = self.shift_for(first_punch)
+        return first_punch.time().replace(second=0, microsecond=0) > shift.late_after, shift
 
     @classmethod
-    def from_row(cls, row):
-        return cls(parse_hhmm(row["start_time"]), int(row["grace_minutes"]), parse_hhmm(row["close_time"]))
+    def from_row(cls, row, shifts=()):
+        return cls(parse_hhmm(row["start_time"]), int(row["grace_minutes"]), parse_hhmm(row["close_time"]),
+                   sorted(shifts, key=lambda s: (s.start, s.id)))
+
+
+def load_shifts(conn, store):
+    return [Shift(r["name"], parse_hhmm(r["start_time"]), parse_hhmm(r["end_time"]),
+                  int(r["grace_minutes"]), r["id"])
+            for r in conn.execute("SELECT * FROM shifts WHERE store=? ORDER BY start_time, id", (store,))]
 
 
 @dataclass
@@ -90,6 +142,7 @@ class Cell:
     comp_earned: bool = False       # the P+ marker: a worked weekly off that earned a comp-off
     comp_note: str = ""              # "covers leave on 2 Oct" / "available until 27 Oct" / ...
     weekly_off: bool = False
+    shift: "Shift | None" = None     # the shift they were counted on (days they came in)
 
     @property
     def first(self):
@@ -280,7 +333,7 @@ class StoreData:
             raise KeyError(store)
         self.store_row = row
         self.store = store
-        self.rules = StoreRules.from_row(row)
+        self.rules = StoreRules.from_row(row, load_shifts(conn, store))
         self.cfg = CompConfig.load(conn)
 
         only = ""
@@ -366,7 +419,7 @@ class StoreData:
     def store_open_on(self, day):
         """Did anyone at the store punch that day? Today, before closing,
         counts as open: the day is still going."""
-        if day == self.today and self.now.time() < self.rules.close_time:
+        if day == self.today and self.now.time() < self.rules.day_end:
             return True
         return day in self.hist_store_days
 
@@ -422,9 +475,11 @@ class StoreData:
         if code == "L" and day in matches:
             c.code = "CO"
             c.comp_note = f"covered by weekly off worked {fmt_day(matches[day])}"
-        if code == "P" and punches[0].time().replace(second=0, microsecond=0) > self.rules.late_after:
-            c.code = "LT"
-        if c.code in ("A", "A*") and day == self.today and self.now.time() < self.rules.close_time:
+        if punches:
+            late, c.shift = self.rules.is_late(punches[0])
+            if code == "P" and late:
+                c.code = "LT"
+        if c.code in ("A", "A*") and day == self.today and self.now.time() < self.rules.day_end:
             c.code = "NOT_IN_YET"
         if day in credits:
             c.comp_earned = True

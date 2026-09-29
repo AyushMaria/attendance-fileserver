@@ -18,7 +18,7 @@ from werkzeug.utils import secure_filename
 import auth
 import clock
 import db
-from attendance import WEEKDAY_NAMES, CompConfig, StoreData, parse_hhmm
+from attendance import WEEKDAY_NAMES, CompConfig, StoreData, load_shifts, parse_hhmm
 from views.api import hash_key
 from views.common import store_row, sync_state
 
@@ -62,7 +62,8 @@ def stores_page(new_key=None):
         staff = conn.execute("SELECT COUNT(*) FROM employees WHERE store=? AND on_device=1",
                              (r["store"],)).fetchone()[0]
         stale, _ = sync_state(r, now)
-        rows.append({"row": r, "staff": staff, "stale": stale})
+        rows.append({"row": r, "staff": staff, "stale": stale,
+                     "shifts": load_shifts(conn, r["store"])})
     cfg = CompConfig.load(conn)
     return render_template("stores.html", stores=rows, cfg=cfg, new_key=new_key,
                            today=now.date())
@@ -148,6 +149,80 @@ def store_key(store):
     return redirect(url_for("admin.stores"))
 
 
+MAX_SHIFTS = 6
+
+
+def shift_form():
+    """(values, problem) from a shift form."""
+    name = request.form.get("name", "").strip()
+    try:
+        start = parse_hhmm(request.form.get("start_time", ""))
+        end = parse_hhmm(request.form.get("end_time", ""))
+        grace = int(request.form.get("grace_minutes", "0"))
+    except (ValueError, TypeError):
+        return None, "Shift times look like 09:30, and grace is a number of minutes."
+    if not name or len(name) > 30:
+        return None, "Give the shift a short name, e.g. Morning."
+    if end <= start:
+        return None, "A shift must end after it starts (on the same day)."
+    if not 0 <= grace <= 120:
+        return None, "Grace must be between 0 and 120 minutes."
+    return {"name": name, "start_time": start.strftime("%H:%M"), "end_time": end.strftime("%H:%M"),
+            "grace_minutes": grace}, None
+
+
+@bp.post("/stores/<store>/shifts/add")
+@auth.require_role("owner")
+def add_shift(store):
+    conn = db.get_db()
+    store_row(store)
+    values, problem = shift_form()
+    if problem is None and conn.execute("SELECT COUNT(*) FROM shifts WHERE store=?",
+                                        (store,)).fetchone()[0] >= MAX_SHIFTS:
+        problem = f"A store can have at most {MAX_SHIFTS} shifts."
+    if problem is None and conn.execute("SELECT 1 FROM shifts WHERE store=? AND start_time=?",
+                                        (store, values["start_time"])).fetchone():
+        problem = "There's already a shift starting at that time."
+    if problem:
+        flash(problem, "error")
+        return redirect(url_for("admin.stores") + f"#s-{store}")
+    conn.execute("INSERT INTO shifts (store, name, start_time, end_time, grace_minutes) VALUES (?,?,?,?,?)",
+                 (store, values["name"], values["start_time"], values["end_time"], values["grace_minutes"]))
+    db.audit(conn, g.user["id"], "shift.add", store, values, ip())
+    conn.commit()
+    flash(f"Added the {values['name']} shift to {store}.", "ok")
+    return redirect(url_for("admin.stores") + f"#s-{store}")
+
+
+@bp.post("/shifts/<int:shift_id>/<action>")
+@auth.require_role("owner")
+def shift_action(shift_id, action):
+    conn = db.get_db()
+    row = conn.execute("SELECT * FROM shifts WHERE id=?", (shift_id,)).fetchone()
+    if row is None or action not in ("edit", "delete"):
+        abort(404)
+    store = row["store"]
+    if action == "delete":
+        conn.execute("DELETE FROM shifts WHERE id=?", (shift_id,))
+        db.audit(conn, g.user["id"], "shift.delete", store, {"name": row["name"]}, ip())
+        conn.commit()
+        flash(f"Removed the {row['name']} shift.", "ok")
+        return redirect(url_for("admin.stores") + f"#s-{store}")
+    values, problem = shift_form()
+    if problem is None and conn.execute("SELECT 1 FROM shifts WHERE store=? AND start_time=? AND id!=?",
+                                        (store, values["start_time"], shift_id)).fetchone():
+        problem = "There's already a shift starting at that time."
+    if problem:
+        flash(problem, "error")
+        return redirect(url_for("admin.stores") + f"#s-{store}")
+    conn.execute("UPDATE shifts SET name=?, start_time=?, end_time=?, grace_minutes=? WHERE id=?",
+                 (values["name"], values["start_time"], values["end_time"], values["grace_minutes"], shift_id))
+    db.audit(conn, g.user["id"], "shift.edit", store, values, ip())
+    conn.commit()
+    flash(f"Saved the {values['name']} shift.", "ok")
+    return redirect(url_for("admin.stores") + f"#s-{store}")
+
+
 @bp.post("/settings/comp")
 @auth.require_role("owner")
 def comp_settings():
@@ -213,7 +288,63 @@ def users():
         "FROM users u LEFT JOIN employees e ON e.store=u.emp_store AND e.user_id=u.emp_user_id "
         "ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END, "
         "active DESC, username").fetchall()
-    return render_template("users.html", users=rows, now_iso=db.utc_now_iso())
+    without = conn.execute(
+        "SELECT COUNT(*) FROM employees e LEFT JOIN users u ON u.emp_store=e.store "
+        "AND u.emp_user_id=e.user_id WHERE u.id IS NULL AND e.on_device=1").fetchone()[0]
+    return render_template("users.html", users=rows, now_iso=db.utc_now_iso(),
+                           without_login=without, standard_password=STANDARD_PASSWORD)
+
+
+STANDARD_PASSWORD = "tmpl@2026"
+
+
+def username_for(conn, first_name, store, user_id, taken):
+    """firstname + device number, e.g. aditi101; with the store added if
+    that's taken (the same number can exist at both stores)."""
+    base = re.sub(r"[^a-z]", "", (first_name or "").lower())[:20] or "staff"
+    uid = re.sub(r"[^A-Za-z0-9]", "", str(user_id))[:10]
+    for candidate in (f"{base}{uid}", f"{base}{uid}.{store}"):
+        if candidate.lower() not in taken and USERNAME.match(candidate):
+            return candidate
+    return None
+
+
+@bp.post("/users/bulk-cro")
+@auth.require_role("owner")
+def bulk_cro():
+    """A CRO login for everyone on the devices who hasn't got one, all with
+    the same starting password, which each must change at first sign-in."""
+    conn = db.get_db()
+    password = request.form.get("password", "").strip() or STANDARD_PASSWORD
+    if len(password) < auth.MIN_PASSWORD:
+        flash(f"The starting password must be at least {auth.MIN_PASSWORD} characters.", "error")
+        return redirect(url_for("admin.users"))
+    taken = {r[0].lower() for r in conn.execute("SELECT username FROM users")}
+    people = conn.execute(
+        "SELECT e.* FROM employees e LEFT JOIN users u ON u.emp_store=e.store AND u.emp_user_id=e.user_id "
+        "WHERE u.id IS NULL AND e.on_device=1 "
+        "ORDER BY e.store, CAST(e.user_id AS INTEGER), e.user_id").fetchall()
+    hashed = generate_password_hash(password)     # one hash for all: same password
+    now = db.utc_now_iso()
+    created, skipped = [], []
+    for e in people:
+        first = (e["name"] or "").split()[0] if (e["name"] or "").split() else ""
+        username = username_for(conn, first, e["store"], e["user_id"], taken)
+        if username is None:
+            skipped.append(e)
+            continue
+        taken.add(username.lower())
+        conn.execute(
+            "INSERT INTO users (username, display_name, password_hash, role, emp_store, emp_user_id, "
+            "created_at, password_changed_at, must_change_password) VALUES (?,?,?,?,?,?,?,?,1)",
+            (username, e["name"] or f"Staff {e['user_id']}", hashed, "cro", e["store"], e["user_id"],
+             now, now))
+        created.append((e, username))
+    db.audit(conn, g.user["id"], "user.bulk_create", "", {"created": len(created),
+                                                          "skipped": len(skipped)}, ip())
+    conn.commit()
+    return render_template("bulk_created.html", created=created, skipped=skipped,
+                           password=password)
 
 
 def account_form(conn, editing=None):
@@ -277,9 +408,11 @@ def new_user():
             now = db.utc_now_iso()
             cur = conn.execute(
                 "INSERT INTO users (username, display_name, password_hash, role, emp_store, "
-                "emp_user_id, created_at, password_changed_at) VALUES (?,?,?,?,?,?,?,?)",
+                "emp_user_id, created_at, password_changed_at, must_change_password) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
                 (username, values["display_name"], generate_password_hash(password),
-                 values["role"], values["emp_store"], values["emp_user_id"], now, now))
+                 values["role"], values["emp_store"], values["emp_user_id"], now, now,
+                 1 if request.form.get("must_change") == "on" else 0))
             save_stores(conn, cur.lastrowid, values["stores"])
             db.audit(conn, g.user["id"], "user.create", username,
                      {k: v for k, v in values.items()}, ip())
@@ -338,8 +471,10 @@ def user_action(uid, action):
             flash(problem, "error")
             return redirect(url_for("admin.edit_user", uid=uid))
         conn.execute("UPDATE users SET password_hash=?, password_changed_at=?, failed_logins=0, "
-                     "locked_until=NULL, session_version=session_version+1 WHERE id=?",
-                     (generate_password_hash(password), db.utc_now_iso(), uid))
+                     "locked_until=NULL, session_version=session_version+1, must_change_password=? "
+                     "WHERE id=?",
+                     (generate_password_hash(password), db.utc_now_iso(),
+                      1 if request.form.get("must_change") == "on" else 0, uid))
         db.audit(conn, g.user["id"], "user.reset_password", name, ip=ip())
         conn.commit()
         return render_template("password_shown.html", username=name,

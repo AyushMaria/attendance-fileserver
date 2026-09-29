@@ -77,6 +77,21 @@ def load_user():
     g.user = row
 
 
+ALLOWED_BEFORE_PASSWORD_CHANGE = {"auth.account", "auth.logout", "auth.login", "static"}
+
+
+def require_own_password():
+    """Runs after load_user: someone still on a password given to them
+    (e.g. the standard one for new staff logins) must choose their own
+    before they can do anything else."""
+    user = g.get("user")
+    if user is None or not user["must_change_password"]:
+        return None
+    if request.endpoint in ALLOWED_BEFORE_PASSWORD_CHANGE:
+        return None
+    return redirect(url_for("auth.account"))
+
+
 def login_required(view):
     @functools.wraps(view)
     def wrapped(*args, **kwargs):
@@ -252,12 +267,14 @@ def account():
                 flash("Your current password isn't right.", "error")
             elif new != again:
                 flash("The two new passwords don't match.", "error")
+            elif new == current:
+                flash("Choose a new password, different from the current one.", "error")
             elif problem := password_problem(new, g.user["username"]):
                 flash(problem, "error")
             else:
                 version = g.user["session_version"] + 1
                 conn.execute("UPDATE users SET password_hash=?, password_changed_at=?, "
-                             "session_version=? WHERE id=?",
+                             "must_change_password=0, session_version=? WHERE id=?",
                              (generate_password_hash(new), iso(utc_now()), version, g.user["id"]))
                 db.audit(conn, g.user["id"], "password.change", g.user["username"], ip=client_ip())
                 conn.commit()

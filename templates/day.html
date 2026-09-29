@@ -37,14 +37,16 @@
 <div class="timeline">
   <div class="tl-row tl-axis" aria-hidden="true"><span></span>
     <svg>{% for x, label in timeline.ticks %}<text class="{{ 'minor' if loop.index0 % 3 }}" x="{{ x }}%" y="12" font-size="11" fill="#8a919c" text-anchor="middle">{{ label }}</text>{% endfor %}</svg><span></span></div>
-  {% for b in timeline.bars %}
+  {% for grp in timeline.groups %}
+  {% if grp.title %}<div class="tl-group">{{ grp.title }} <span class="muted">· {{ grp.bars|length }} in · dashed line {{ grp.start_label }}</span></div>{% endif %}
+  {% for b in grp.bars %}
   {% set c = b.cell %}
   <div class="tl-row">
     <span class="who"><a href="{{ url_for('main.person', store=store.store, user_id=b.person.user_id, month=day.strftime('%Y-%m')) }}">{{ b.person.name or b.person.user_id }}</a> <span class="muted small">{{ b.person.user_id }}</span></span>
     <svg role="img" aria-label="{{ b.person.name }}: {{ b.tip }}">
       <title>{{ b.person.name }} — punches: {{ b.tip }}</title>
       {% for x, _l in timeline.ticks %}<line x1="{{ x }}%" x2="{{ x }}%" y1="0" y2="22" stroke="#eef0f3"/>{% endfor %}
-      <line x1="{{ timeline.start_x }}%" x2="{{ timeline.start_x }}%" y1="0" y2="22" stroke="#9aa1ab" stroke-dasharray="3 3"/>
+      <line x1="{{ grp.start_x }}%" x2="{{ grp.start_x }}%" y1="0" y2="22" stroke="#9aa1ab" stroke-dasharray="3 3"/>
       {% if b.x2 > b.x1 %}<line x1="{{ b.x1 }}%" x2="{{ b.x2 }}%" y1="11" y2="11" stroke="{{ '#d9a400' if b.late else '#4f86c6' }}" stroke-width="5" stroke-linecap="round" opacity=".55"/>{% endif %}
       {% for x, t in b.dots %}<circle cx="{{ x }}%" cy="11" r="4.5" fill="{{ '#b78900' if b.late and loop.first else '#1f3a5f' }}"><title>{{ t }}</title></circle>{% endfor %}
     </svg>
@@ -52,7 +54,8 @@
       {% if b.late %} {{ badge('LT') }}{% endif %}{% if c.weekly_off %} <span class="pill" title="Worked on their weekly off">WO{% if c.comp_earned %}⁺{% endif %}</span>{% endif %}</span>
   </div>
   {% endfor %}
-  <p class="small muted" style="margin:6px 0 0">Dashed line: {{ timeline.start_label }}. Hover a bar for every punch.</p>
+  {% endfor %}
+  <p class="small muted" style="margin:6px 0 0">{% if timeline.has_shifts %}Each person is counted on the shift whose start is closest to their first punch.{% else %}Dashed line: {{ timeline.groups[0].start_label }}.{% endif %} Hover a bar for every punch.</p>
 </div>
 {% endif %}
 

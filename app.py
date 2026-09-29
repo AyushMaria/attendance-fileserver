@@ -59,7 +59,7 @@ def create_app(overrides=None):
     csrf.init_app(app)
     app.teardown_appcontext(db.close_db)
 
-    from auth import bp as auth_bp, load_user
+    from auth import bp as auth_bp, load_user, require_own_password
     from views.api import bp as api_bp
     from views.main import bp as main_bp
     from views.leave import bp as leave_bp
@@ -71,6 +71,7 @@ def create_app(overrides=None):
     app.register_blueprint(admin_bp)
     csrf.exempt(api_bp)                    # the sync key, no cookies
     app.before_request(load_user)
+    app.before_request(require_own_password)
 
     register_template_helpers(app)
 

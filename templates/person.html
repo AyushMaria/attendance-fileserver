@@ -25,7 +25,7 @@
     {% for c in week %}
       {% if c is none %}<td class="pad"></td>
       {% else %}
-      <td class="{{ 'is-today' if c.day == today }}" title="{{ CODE_LABELS.get(c.code, '') }}{% if c.note %} — {{ c.note }}{% endif %}{% if c.comp_note %} · {{ c.comp_note }}{% endif %}">
+      <td class="{{ 'is-today' if c.day == today }}" title="{{ CODE_LABELS.get(c.code, '') }}{% if c.note %} — {{ c.note }}{% endif %}{% if c.comp_note %} · {{ c.comp_note }}{% endif %}{% if c.shift and c.shift.name %} · {{ c.shift.label }} shift{% endif %}">
         <div class="d">{{ c.day.day }}</div>
         {% if c.code %}{{ badge(c.code, c.comp_earned) }}{% elif c.leave and c.leave.status in ('approved','pending') %}<span class="small muted">{{ 'leave' if c.leave.status == 'approved' else 'requested' }}</span>{% elif c.weekly_off %}<span class="small muted">off</span>{% endif %}
         {% if c.punches %}<div class="t">{{ c.punches[0].strftime('%H:%M') }}{% if c.last %}–{{ c.last.strftime('%H:%M') }}{% endif %}</div>{% endif %}

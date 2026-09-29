@@ -44,7 +44,8 @@
               'no_out': c.no_checkout,
               'note': c.note, 'comp': c.comp_note,
               'by': (c.leave.decided_by_name if c.leave and c.leave.status == 'approved' else ''),
-              'wo': c.weekly_off } %}
+              'wo': c.weekly_off,
+              'shift': (c.shift.label if c.shift and c.shift.name else '') } %}
           <td><button type="button" class="cellbtn code {{ kcls(c.code) }}" data-info="{{ info|tojson|forceescape }}"
               aria-label="{{ info.title }}: {{ info.code }}">{{ short(c.code) }}{% if c.comp_earned %}<sup>+</sup>{% endif %}</button></td>
         {% else %}<td></td>{% endif %}
@@ -84,6 +85,7 @@
       body.innerHTML = '';
       body.appendChild(el('b', i.title));
       body.appendChild(el('div', i.code + (i.wo && i.code !== 'Weekly off' ? ' · weekly off day' : '')));
+      if (i.shift) body.appendChild(el('div', 'Counted on the ' + i.shift + ' shift', 'muted'));
       if (i.times) body.appendChild(el('div', 'Punches: ' + i.times + (i.no_out ? ' (no check-out)' : ''), 'muted'));
       if (i.note) body.appendChild(el('div', i.note));
       if (i.by) body.appendChild(el('div', 'Approved by ' + i.by, 'muted'));

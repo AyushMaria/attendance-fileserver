@@ -6,6 +6,20 @@
   <a class="btn" href="{{ url_for('admin.new_user') }}">+ New account</a>
 </div>
 <p class="sub">Only you create accounts. Each Manager and CRO login belongs to one person on the device.</p>
+{% if without_login %}
+<div class="card" style="margin-bottom:16px">
+  <form method="post" action="{{ url_for('admin.bulk_cro') }}" class="row" style="align-items:flex-end"
+        onsubmit="return confirm('Create a CRO login for all {{ without_login }} people on the devices who don\'t have one?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div style="flex:2 1 260px"><b>{{ without_login }} people on the devices have no login yet.</b>
+      <div class="small muted">Creates a CRO login for each (e.g. aditi101). They must choose their own password at first sign-in.
+        To make someone a Manager afterwards, open their account and change the role.</div></div>
+    <div class="field" style="margin:0"><label for="bp">Starting password</label>
+      <input id="bp" type="text" name="password" value="{{ standard_password }}" minlength="8" required></div>
+    <div style="flex:0 0 auto"><button type="submit">Create CRO logins</button></div>
+  </form>
+</div>
+{% endif %}
 <div class="scroll"><table class="list">
   <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Store / person</th><th>Status</th><th>Last sign-in</th></tr></thead>
   <tbody>
@@ -15,7 +29,7 @@
       <td>{{ u.display_name }}</td>
       <td>{{ {'owner':'Owner','manager':'Manager','cro':'CRO'}[u.role] }}</td>
       <td>{% if u.role == 'manager' %}{{ u.covers or '—' }} · {% endif %}{% if u.emp_user_id %}{{ u.emp_store }} #{{ u.emp_user_id }} {{ u.emp_name or '' }}{% else %}—{% endif %}</td>
-      <td>{% if u.active %}{% if u.locked_until and u.locked_until > now_iso %}<span class="pill warn">locked</span>{% else %}<span class="pill good">active</span>{% endif %}{% else %}<span class="pill">inactive</span>{% endif %}</td>
+      <td>{% if u.active and u.must_change_password %}<span class="pill">first sign-in pending</span> {% endif %}{% if u.active %}{% if u.locked_until and u.locked_until > now_iso %}<span class="pill warn">locked</span>{% else %}<span class="pill good">active</span>{% endif %}{% else %}<span class="pill">inactive</span>{% endif %}</td>
       <td class="nowrap">{{ u.last_login_at|localtime('%d %b, %H:%M') or 'never' }}</td>
     </tr>
   {% endfor %}
