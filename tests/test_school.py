@@ -57,7 +57,7 @@ def test_tally_placed_on_september_absences_then_october_until_used_up(school, m
     assert [code(sd, 1, d) for d in ("2026-09-03", "2026-09-10", "2026-09-17")] == ["L", "L", "L"]
     assert code(sd, 1, "2026-10-01") == "L" and code(sd, 1, "2026-10-02") == "L"
     c = sd.cell("1", date(2026, 10, 5))
-    assert c.code == "A" and "already used" in c.note
+    assert c.code == "A" and "beyond the 7 leaves" in c.note
     a = sd.allowance("1")
     assert (a.before_tracking, a.used, a.left) == (2, 7, 0)
     assert "7 of 7" in sd.cell("1", date(2026, 10, 2)).note
@@ -167,3 +167,38 @@ def test_stores_without_policy_unchanged(make, conn, now):
     make.punch("mall", 999, "2026-10-05 09:00:00")
     sd = StoreData(conn, "mall", date(2026, 10, 5), date(2026, 10, 5), now.value)
     assert sd.cell("1", date(2026, 10, 5)).code == "A" and sd.allowance("1") is None
+
+
+def test_tally_over_seven_latest_days_stay_absent(school, make, conn, now):
+    """Tally 9 with 5 September absences: 4 were before September, so the
+    September ones are leaves 5, 6, 7 and then two absences beyond 7."""
+    days = ["2026-09-03", "2026-09-10", "2026-09-17", "2026-09-22", "2026-09-24"]
+    present_except(make, 1, set(days))
+    tally(conn, 1, 9)
+    sd = data(conn, now)
+    assert [code(sd, 1, d) for d in days] == ["L", "L", "L", "A", "A"]
+    assert "beyond the 7 leaves" in sd.cell("1", date(2026, 9, 24)).note
+    a = sd.allowance("1")
+    assert (a.before_tracking, a.used, a.left) == (4, 7, 0)
+
+
+def test_hand_marked_absent_stays_absent_and_counts_in_tally(school, make, conn, now, as_user):
+    days = ["2026-09-03", "2026-09-10", "2026-09-17", "2026-09-22", "2026-09-24"]
+    present_except(make, 1, set(days))
+    tally(conn, 1, 9)
+    c = as_user(school)
+    for d in ("2026-09-10", "2026-09-24"):
+        c.post("/mark", data={"person": "school:1", "day": d, "code": "A", "note": "over the 7"})
+    sd = data(conn, now)
+    # the two marked stay A; they are 2 of the 9, so the other three are leave
+    assert [code(sd, 1, d) for d in days] == ["L", "A", "L", "L", "A"]
+    a = sd.allowance("1")
+    assert (a.before_tracking, a.used, a.left) == (4, 7, 0)
+
+
+def test_hand_marked_absent_after_tally_never_uses_a_leave(school, make, conn, now, as_user):
+    present_except(make, 2, {"2026-10-01"})
+    as_user(school).post("/mark", data={"person": "school:2", "day": "2026-10-01", "code": "A",
+                                        "note": "unpaid"})
+    sd = data(conn, now)
+    assert code(sd, 2, "2026-10-01") == "A" and sd.allowance("2").used == 0

@@ -196,6 +196,7 @@ class Allowance:
     before_tracking: int = 0       # part of the tally from before tracking began
     auto: dict = field(default_factory=dict)       # day -> "n of 7" for absences counted as leave
     exhausted: set = field(default_factory=set)    # absences after the allowance ran out
+    unpaid: set = field(default_factory=set)       # tally days marked absent by hand
     counted: dict = field(default_factory=dict)    # day -> running total, every leave day counted
     used: int = 0
 
@@ -583,21 +584,47 @@ class StoreData:
         a.tally = self.tally.get((uid, ys.isoformat()), 0) if tally_on else 0
         budget = a.tally                 # tally still to place on days
         settled = not tally_on
-        used = 0                         # leaves counted so far this year
+        placed = []                      # (day, explicit) inside the tally period
+        used = 0                         # paid leaves counted so far this year
+
+        def count(d, explicit):
+            """Count one leave or absence against the allowance, in date order."""
+            nonlocal used
+            if explicit:                 # an approved request always counts
+                used += 1
+                a.counted[d] = used
+            elif used < pol.allowance:
+                used += 1
+                a.counted[d] = used
+                a.auto[d] = used
+            else:
+                a.exhausted.add(d)       # beyond the allowance: stays an absence
 
         def settle():
-            # whatever of the tally didn't land on a day was taken before
-            # tracking began (June to August for the school)
+            # Whatever of the tally didn't land on a day was taken before
+            # tracking began (June to August for the school). Those days come
+            # first in the year, so the tally period's days are numbered after
+            # them - and any beyond the allowance stay absences.
             nonlocal budget, used, settled
             a.before_tracking = budget
-            used += budget
+            used = budget
             budget = 0
             settled = True
+            for d, explicit in placed:
+                count(d, explicit)
 
         start = max(ys, pol.count_from or ys)
         for d in daterange(start, min(ye, self.today)):
             if not settled and d > pol.tally_as_of:
                 settle()
+            ov = self.overrides.get((uid, d))
+            if ov is not None and ov["code"] == "A":
+                # marked absent by hand: never leave. Inside the tally period
+                # it is still one of the tally's days (an absence, unpaid).
+                if not settled and budget > 0:
+                    budget -= 1
+                    a.unpaid.add(d)
+                continue
             code, lv = self._base(uid, d)
             explicit = code == "L"                  # an approved leave request
             absent = code == "A" and lv is None     # no request at all
@@ -606,22 +633,11 @@ class StoreData:
             if not settled:                          # covered by the tally
                 if budget > 0:
                     budget -= 1
-                elif absent:
-                    continue                         # the tally says this wasn't leave
-                used += 1
-                a.counted[d] = used
-                if absent:
-                    a.auto[d] = used
-                continue
-            if explicit:
-                used += 1
-                a.counted[d] = used
-            elif used < pol.allowance:
-                used += 1
-                a.counted[d] = used
-                a.auto[d] = used
-            else:
-                a.exhausted.add(d)
+                    placed.append((d, explicit))
+                elif explicit:
+                    placed.append((d, True))          # approved beyond the tally
+                continue                             # else: the tally says not leave
+            count(d, explicit)
         if not settled:
             settle()
         a.used = used
@@ -665,8 +681,8 @@ class StoreData:
             elif c.code == "L" and day in a.counted:
                 c.note = (f"{c.note} · " if c.note else "") + \
                     f"leave {a.used_by(day)} of {a.allowance} this year"
-            elif day in a.exhausted:
-                c.note = f"all {a.allowance} leaves for the year already used"
+            elif day in a.exhausted and c.manual is None:
+                c.note = f"absent - beyond the {a.allowance} leaves allowed this year"
         if day in credits:
             c.comp_earned = True
             c.comp_note = self._credit_note(day, matches)
