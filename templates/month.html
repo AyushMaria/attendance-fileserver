@@ -48,7 +48,7 @@
               'wo': c.weekly_off,
               'shift': (c.shift.label if c.shift and c.shift.name else ''),
               'person': store.store ~ ':' ~ p.user_id, 'day': c.day.isoformat(),
-              'edit': r.can_act, 'manual': c.manual is not none } %}
+              'edit': me.role == 'owner', 'manual': c.manual is not none } %}
           <td><button type="button" class="cellbtn code {{ kcls(c.code) }}" data-info="{{ info|tojson|forceescape }}"
               aria-label="{{ info.title }}: {{ info.code }}">{{ short(c.code) }}{% if c.comp_earned %}<sup>+</sup>{% endif %}{% if c.manual %}<sup title="corrected by hand" style="color:#1f3a5f">✎</sup>{% endif %}</button></td>
         {% else %}<td></td>{% endif %}

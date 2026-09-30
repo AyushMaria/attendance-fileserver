@@ -31,10 +31,10 @@ def cell(conn, now, uid="101", day="2026-10-05", store="mall"):
 
 def test_mark_present_and_undo(world, as_user, conn, now):
     assert cell(conn, now).code == "A"
-    c = as_user(world["mgr"])
+    c = as_user(world["owner"])
     assert mark(c).status_code == 302
     got = cell(conn, now)
-    assert got.code == "P" and got.manual and "forgot to punch" in got.note and "Mgr" in got.note
+    assert got.code == "P" and got.manual and "forgot to punch" in got.note and "Owner" in got.note
     mark(c, code="clear", note="")
     assert cell(conn, now).code == "A"
     actions = [r[0] for r in conn.execute("SELECT action FROM audit_log ORDER BY id")]
@@ -60,9 +60,10 @@ def test_reason_required_and_no_future(world, as_user, conn):
 
 
 def test_permissions(world, as_user, conn):
-    assert mark(as_user(world["mgr"]), person="mall:102").status_code == 404      # themselves
-    assert mark(as_user(world["mgr"]), person="nirala:201").status_code == 404    # other store
+    assert mark(as_user(world["mgr"]), person="mall:101").status_code == 404      # managers: never
+    assert mark(as_user(world["mgr"]), person="mall:102").status_code == 404
     assert mark(as_user(world["cro"]), person="mall:101").status_code == 404      # CRO
+    assert conn.execute("SELECT COUNT(*) FROM day_overrides").fetchone()[0] == 0
     assert mark(as_user(world["owner"]), person="mall:102").status_code == 302    # owner: anyone
     assert as_user(world["owner"]).post("/mark", data={"person": "mall:101", "day": "2026-10-05",
                                                       "code": "X", "note": "x"}).status_code == 400
@@ -85,11 +86,13 @@ def test_school_absence_marked_present_frees_a_leave(make, conn, now, as_user):
     assert sd.cell("1", d).code == "P" and sd.allowance("1").used == 0
 
 
-def test_pages_show_the_form(world, as_user):
-    c = as_user(world["mgr"])
-    month = c.get("/calendar/mall/2026-10").data.decode()
-    assert 'id="markform"' in month
-    day = c.get("/day/mall/2026-10-05").data.decode()
-    assert "Mark present" in day
+def test_pages_show_the_form_to_owner_only(world, as_user):
+    m = as_user(world["mgr"])
+    assert "&#34;edit&#34;: true" not in m.get("/calendar/mall/2026-10").data.decode()
+    assert "Mark present" not in m.get("/day/mall/2026-10-05").data.decode()
+    c = as_user(world["owner"])
+    assert "&#34;edit&#34;: true" in c.get("/calendar/mall/2026-10").data.decode()
+    assert "Mark present" in c.get("/day/mall/2026-10-05").data.decode()
     mark(c)
     assert "✎" in c.get("/calendar/mall/2026-10").data.decode()
+    assert "✎" in m.get("/calendar/mall/2026-10").data.decode()      # managers still see it

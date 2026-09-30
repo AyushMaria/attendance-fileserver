@@ -328,7 +328,7 @@ MARK_CODES = {"P": "present", "LT": "late", "A": "absent", "WO": "weekly off"}
 
 
 @bp.post("/mark")
-@auth.require_role("owner", "manager")
+@auth.require_role("owner")          # corrections are the Owner's alone
 def mark_day():
     """Set, or clear, one person's status for one day by hand - for a
     forgotten punch, a punch made for someone else, a swapped day off."""

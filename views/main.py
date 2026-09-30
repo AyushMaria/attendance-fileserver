@@ -149,8 +149,8 @@ def day(store, day):
     counts["on_wo"] = sum(1 for _, c in present if c.weekly_off)
     timeline = build_timeline(present, data.rules, d)
     conn = db.get_db()
-    can_act = {p["user_id"] for p, _c in present + absent
-               if auth.can_act_for(g.user, store, p["user_id"], conn)}
+    # only the Owner can correct a day by hand
+    can_act = {p["user_id"] for p, _c in present + absent} if g.user["role"] == "owner" else set()
     return render_template(
         "day.html", store=row, day=d, present=present, absent=absent, counts=counts,
         can_act=can_act, uses_wo=data.uses_weekly_offs,
