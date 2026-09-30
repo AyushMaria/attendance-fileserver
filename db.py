@@ -211,6 +211,9 @@ ADDED_COLUMNS = [
     ("stores", "leave_year_start_month", "INTEGER NOT NULL DEFAULT 6"),
     ("stores", "leave_count_from", "TEXT"),                 # absences count as leave from this day
     ("stores", "tally_as_of", "TEXT"),                      # the hand tally covers up to this day
+    # someone on a device who isn't staff (the Owner enrolled as an admin):
+    # left out of every calendar, count and account creation
+    ("employees", "hidden", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -226,6 +229,16 @@ def migrate(conn):
         except sqlite3.OperationalError as e:
             if "duplicate column" not in str(e):
                 raise
+            continue
+        if (table, column) == ("employees", "hidden"):
+            # One time, when hiding arrives: the Owner is enrolled on every
+            # device as its admin under the name Ayush, and asked for those
+            # entries to be left out of the calendars.
+            n = conn.execute("UPDATE employees SET hidden=1 "
+                             "WHERE lower(trim(name))='ayush'").rowcount
+            if n:
+                audit(conn, None, "person.hide", "Ayush (every store)",
+                      {"count": n, "why": "the Owner's admin enrolment on the devices"})
 
 
 def get_db():

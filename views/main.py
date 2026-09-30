@@ -219,7 +219,7 @@ def person(store, user_id, month):
         abort(404)
     row = store_row(store)
     emp = employee(store, user_id)
-    if emp is None:
+    if emp is None or (emp["hidden"] and g.user["role"] != "owner"):
         abort(404)
     first = parse_month(month)
     first, last = month_bounds(first.year, first.month)

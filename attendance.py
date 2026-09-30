@@ -405,10 +405,13 @@ class StoreData:
             only = f" AND user_id IN ({','.join('?' * len(user_ids))})" if user_ids else " AND 0"
             args += user_ids
 
-        # 1. people
+        # 1. people (hidden ones - not staff - only when asked for by name)
         self.people = conn.execute(
-            f"SELECT * FROM employees WHERE store=?{only}", args).fetchall()
+            f"SELECT * FROM employees WHERE store=?{only}"
+            f"{'' if user_ids is not None else ' AND hidden=0'}", args).fetchall()
         self.people = sorted(self.people, key=lambda r: natural_key(r["user_id"]))
+        self.hidden = {r["user_id"] for r in conn.execute(
+            "SELECT user_id FROM employees WHERE store=? AND hidden=1", (store,))}
 
         # 2. every punch in the range shown
         self.punches = {}          # (user_id, day) -> [datetime]
@@ -417,7 +420,8 @@ class StoreData:
                 "SELECT user_id, day, ts FROM punches WHERE store=? AND day BETWEEN ? AND ? ORDER BY ts",
                 (store, first.isoformat(), last.isoformat())):
             d = date.fromisoformat(r["day"])
-            self.store_days.add(d)
+            if r["user_id"] not in self.hidden:    # a hidden person alone doesn't open the store
+                self.store_days.add(d)
             if user_ids is None or r["user_id"] in user_ids:
                 self.punches.setdefault((r["user_id"], d), []).append(parse_ts(r["ts"]))
 
@@ -450,8 +454,9 @@ class StoreData:
             self.spans.setdefault(r["user_id"], {})[date.fromisoformat(r["day"])] = (
                 parse_ts(r["a"]), parse_ts(r["b"]))
         self.hist_store_days = {date.fromisoformat(r["day"]) for r in conn.execute(
-            "SELECT DISTINCT day FROM punches WHERE store=? AND day >= ?",
-            (store, self.hist_from.isoformat()))}
+            "SELECT DISTINCT day FROM punches WHERE store=? AND day >= ? AND user_id NOT IN "
+            "(SELECT user_id FROM employees WHERE store=? AND hidden=1)",
+            (store, self.hist_from.isoformat(), store))}
         self.hist_store_days |= self.store_days
 
         # 5. weekly offs (all of them: they are dated)

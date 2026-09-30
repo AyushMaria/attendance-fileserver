@@ -97,3 +97,50 @@ def test_old_database_gets_new_column(tmp_path):
     conn = db.connect(str(path))
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(users)")}
     assert "must_change_password" in cols
+
+
+def test_hidden_people_left_out_everywhere(app, conn, make, as_user, now):
+    from datetime import date
+    from attendance import StoreData
+    make.store("mall")
+    owner = make.user("boss", "owner")
+    make.emp("mall", 1, "Ayush")
+    make.emp("mall", 2, "Aditi Sharma")
+    make.punch("mall", 1, "2026-10-04 11:00:00")      # only the Owner came in on Sunday
+    make.punch("mall", 2, "2026-10-05 09:00:00")
+    c = as_user(owner)
+    c.post("/people/hide", data={"person": "mall:1"})
+    sd = StoreData(conn, "mall", date(2026, 10, 1), date(2026, 10, 31), now.value)
+    assert [p["user_id"] for p in sd.people] == ["2"]
+    assert sd.cell("2", date(2026, 10, 4)).code == "NODATA"      # the Owner alone doesn't open the store
+    assert "Ayush" not in c.get("/calendar/mall/2026-10").data.decode()
+    assert "Ayush" not in c.get("/staff").data.decode()
+    body = c.get("/users").data.decode()
+    assert "1 people on the devices have no login yet" in body
+    r = c.post("/users/bulk-cro", data={"password": "tmpl@2026"}).data.decode()
+    assert "aditi2" in r and "ayush1" not in r
+    assert conn.execute("SELECT COUNT(*) FROM users WHERE emp_user_id='1'").fetchone()[0] == 0
+    c.post("/people/show", data={"person": "mall:1"})
+    assert "Ayush" in c.get("/calendar/mall/2026-10").data.decode()
+
+
+def test_ayush_hidden_once_when_upgrading(tmp_path):
+    import sqlite3
+    import db
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE employees (store TEXT, user_id TEXT, name TEXT, on_device INTEGER,
+                                first_seen TEXT, last_seen TEXT, PRIMARY KEY (store, user_id));
+        INSERT INTO employees VALUES ('mall','1','Ayush',1,'x','x'), ('nirala','2',' ayush ',1,'x','x'),
+                                     ('mall','3','Ayushi',1,'x','x');""")
+    conn.commit()
+    conn.close()
+    db.init_db(str(path))
+    conn = db.connect(str(path))
+    got = {r["user_id"]: r["hidden"] for r in conn.execute("SELECT * FROM employees")}
+    assert got == {"1": 1, "2": 1, "3": 0}
+    conn.execute("UPDATE employees SET hidden=0")
+    conn.commit()
+    db.init_db(str(path))                              # never again after the first time
+    assert conn.execute("SELECT SUM(hidden) FROM employees").fetchone()[0] == 0

@@ -35,6 +35,31 @@
   {% endfor %}
   </tbody>
 </table></div>
+<h2 id="hidden">Hidden from the calendars</h2>
+<div class="card">
+  <p class="small muted" style="margin-top:0">For someone on a device who isn't staff - like you, enrolled as the device admin.
+    They're left out of every calendar, count, weekly-off list and login creation. Their punches stay stored.</p>
+  {% if hidden %}
+  <table class="list" style="margin-bottom:12px"><tbody>
+    {% for e in hidden %}
+    <tr><td>{{ e.store }} · #{{ e.user_id }} {{ e.name }}</td>
+      <td style="text-align:right"><form class="inline" method="post" action="{{ url_for('admin.hide_person', action='show') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="person" value="{{ e.store }}:{{ e.user_id }}">
+        <button type="submit" class="plain small">Show again</button></form></td></tr>
+    {% endfor %}
+  </tbody></table>
+  {% else %}<p class="small">Nobody is hidden.</p>{% endif %}
+  <form method="post" action="{{ url_for('admin.hide_person', action='hide') }}" class="row" style="align-items:flex-end">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field" style="flex:2 1 240px;margin:0"><label for="hp">Hide someone</label>
+      <select id="hp" name="person" required>
+        {% for e in visible %}<option value="{{ e.store }}:{{ e.user_id }}">{{ e.store }} · #{{ e.user_id }} {{ e.name }}</option>{% endfor %}
+      </select></div>
+    <div style="flex:0 0 auto"><button type="submit" class="plain">Hide</button></div>
+  </form>
+</div>
+
 <p class="small" style="margin-top:18px"><a href="{{ url_for('admin.backup') }}">Download a backup of the database</a>
   <span class="muted">— accounts, leave history and punches. Do this weekly.</span></p>
 {% endblock %}

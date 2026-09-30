@@ -156,7 +156,8 @@ def actable_people(conn):
     """(store, user_id, name) for everyone this person may act for."""
     out = []
     mine = auth.stores_for(g.user, conn)
-    for e in conn.execute("SELECT * FROM employees ORDER BY store, CAST(user_id AS INTEGER), user_id"):
+    for e in conn.execute("SELECT * FROM employees WHERE hidden=0 "
+                          "ORDER BY store, CAST(user_id AS INTEGER), user_id"):
         if e["store"] in mine and auth.can_act_for(g.user, e["store"], e["user_id"], conn):
             out.append(e)
     return out

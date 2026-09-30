@@ -59,7 +59,7 @@ def stores_page(new_key=None):
     now = clock.now_local()
     rows = []
     for r in conn.execute("SELECT * FROM stores ORDER BY store"):
-        staff = conn.execute("SELECT COUNT(*) FROM employees WHERE store=? AND on_device=1",
+        staff = conn.execute("SELECT COUNT(*) FROM employees WHERE store=? AND on_device=1 AND hidden=0",
                              (r["store"],)).fetchone()[0]
         stale, _ = sync_state(r, now)
         rows.append({"row": r, "staff": staff, "stale": stale,
@@ -207,7 +207,8 @@ def leave_tally(store):
             flash("The tally date must be a real date in the last year, not in the future.", "error")
             return redirect(url_for("admin.leave_tally", store=store))
         year_start, _ = policy.year_of(as_of)
-        people = conn.execute("SELECT user_id FROM employees WHERE store=?", (store,)).fetchall()
+        people = conn.execute("SELECT user_id FROM employees WHERE store=? AND hidden=0",
+                              (store,)).fetchall()
         saved = {}
         for p in people:
             raw = request.form.get(f"used_{p['user_id']}", "").strip()
@@ -375,7 +376,8 @@ def people_without_login(conn, keep=None):
     rows = conn.execute(
         "SELECT e.* FROM employees e LEFT JOIN users u "
         "ON u.emp_store=e.store AND u.emp_user_id=e.user_id "
-        "WHERE u.id IS NULL OR (u.id = ?) ORDER BY e.store, CAST(e.user_id AS INTEGER), e.user_id",
+        "WHERE (u.id IS NULL AND e.hidden=0) OR (u.id = ?) "
+        "ORDER BY e.store, CAST(e.user_id AS INTEGER), e.user_id",
         (keep or -1,)).fetchall()
     return rows
 
@@ -392,9 +394,34 @@ def users():
         "active DESC, username").fetchall()
     without = conn.execute(
         "SELECT COUNT(*) FROM employees e LEFT JOIN users u ON u.emp_store=e.store "
-        "AND u.emp_user_id=e.user_id WHERE u.id IS NULL AND e.on_device=1").fetchone()[0]
+        "AND u.emp_user_id=e.user_id WHERE u.id IS NULL AND e.on_device=1 AND e.hidden=0").fetchone()[0]
+    everyone = conn.execute("SELECT * FROM employees ORDER BY store, CAST(user_id AS INTEGER), "
+                            "user_id").fetchall()
     return render_template("users.html", users=rows, now_iso=db.utc_now_iso(),
-                           without_login=without, standard_password=STANDARD_PASSWORD)
+                           without_login=without, standard_password=STANDARD_PASSWORD,
+                           hidden=[e for e in everyone if e["hidden"]],
+                           visible=[e for e in everyone if not e["hidden"]])
+
+
+@bp.post("/people/<action>")
+@auth.require_role("owner")
+def hide_person(action):
+    """Hide someone on a device who isn't staff (e.g. the Owner, enrolled as
+    the device admin) from every calendar, count and account creation - or
+    show them again. Their punches stay stored."""
+    if action not in ("hide", "show"):
+        abort(404)
+    conn = db.get_db()
+    store, _, user_id = request.form.get("person", "").partition(":")
+    if not conn.execute("SELECT 1 FROM employees WHERE store=? AND user_id=?",
+                        (store, user_id)).fetchone():
+        abort(404)
+    conn.execute("UPDATE employees SET hidden=? WHERE store=? AND user_id=?",
+                 (1 if action == "hide" else 0, store, user_id))
+    db.audit(conn, g.user["id"], f"person.{action}", f"{store}:{user_id}", ip=ip())
+    conn.commit()
+    flash("Hidden from the calendars." if action == "hide" else "Shown on the calendars again.", "ok")
+    return redirect(url_for("admin.users") + "#hidden")
 
 
 STANDARD_PASSWORD = "tmpl@2026"
@@ -424,7 +451,7 @@ def bulk_cro():
     taken = {r[0].lower() for r in conn.execute("SELECT username FROM users")}
     people = conn.execute(
         "SELECT e.* FROM employees e LEFT JOIN users u ON u.emp_store=e.store AND u.emp_user_id=e.user_id "
-        "WHERE u.id IS NULL AND e.on_device=1 "
+        "WHERE u.id IS NULL AND e.on_device=1 AND e.hidden=0 "
         "ORDER BY e.store, CAST(e.user_id AS INTEGER), e.user_id").fetchall()
     hashed = generate_password_hash(password)     # one hash for all: same password
     now = db.utc_now_iso()
