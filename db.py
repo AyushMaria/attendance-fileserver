@@ -140,6 +140,18 @@ CREATE TABLE IF NOT EXISTS shifts (
     grace_minutes INTEGER NOT NULL DEFAULT 10
 );
 
+-- leaves already taken in a leave year before the website tracked them
+-- (the hand tally), per person
+CREATE TABLE IF NOT EXISTS leave_tally (
+    store      TEXT NOT NULL,
+    user_id    TEXT NOT NULL,
+    year_start TEXT NOT NULL,          -- first day of the leave year, e.g. 2026-06-01
+    used       INTEGER NOT NULL,
+    set_by     INTEGER REFERENCES users(id),
+    set_at     TEXT NOT NULL,
+    PRIMARY KEY (store, user_id, year_start)
+);
+
 CREATE INDEX IF NOT EXISTS idx_punches_day ON punches(store, day, user_id);
 CREATE INDEX IF NOT EXISTS idx_leaves_emp  ON leaves(store, user_id, start_date);
 CREATE INDEX IF NOT EXISTS idx_leaves_stat ON leaves(status);
@@ -178,6 +190,13 @@ def init_db(path):
 # Columns added after the first release: (table, column, definition).
 ADDED_COLUMNS = [
     ("users", "must_change_password", "INTEGER NOT NULL DEFAULT 0"),
+    # per-store policy (the school works differently from the stores)
+    ("stores", "uses_weekly_offs", "INTEGER NOT NULL DEFAULT 1"),
+    ("stores", "uses_comp_offs", "INTEGER NOT NULL DEFAULT 1"),
+    ("stores", "leave_allowance", "INTEGER"),               # leaves per year; NULL = no allowance
+    ("stores", "leave_year_start_month", "INTEGER NOT NULL DEFAULT 6"),
+    ("stores", "leave_count_from", "TEXT"),                 # absences count as leave from this day
+    ("stores", "tally_as_of", "TEXT"),                      # the hand tally covers up to this day
 ]
 
 

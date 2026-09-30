@@ -149,6 +149,108 @@ def store_key(store):
     return redirect(url_for("admin.stores"))
 
 
+@bp.post("/stores/<store>/policy")
+@auth.require_role("owner")
+def store_policy(store):
+    """Which rules a store uses: weekly offs, comp-offs, a yearly leave
+    allowance."""
+    conn = db.get_db()
+    store_row(store)
+    uses_wo = 1 if request.form.get("uses_weekly_offs") == "on" else 0
+    uses_co = 1 if request.form.get("uses_comp_offs") == "on" else 0
+    raw_allow = request.form.get("leave_allowance", "").strip()
+    raw_from = request.form.get("leave_count_from", "").strip()
+    try:
+        allowance = int(raw_allow) if raw_allow else None
+        month = int(request.form.get("leave_year_start_month", "6"))
+        count_from = date.fromisoformat(raw_from) if raw_from else None
+    except ValueError:
+        flash("The allowance is a number of days, and the dates must be real dates.", "error")
+        return redirect(url_for("admin.stores") + f"#s-{store}")
+    if allowance is not None and not 0 <= allowance <= 366:
+        flash("The allowance must be between 0 and 366 days.", "error")
+        return redirect(url_for("admin.stores") + f"#s-{store}")
+    if not 1 <= month <= 12 or (count_from and not (2020 <= count_from.year <= clock.today().year + 1)):
+        flash("Choose a real month and a sensible 'count from' date.", "error")
+        return redirect(url_for("admin.stores") + f"#s-{store}")
+    values = {"uses_weekly_offs": uses_wo, "uses_comp_offs": uses_co, "leave_allowance": allowance,
+              "leave_year_start_month": month,
+              "leave_count_from": count_from.isoformat() if count_from else None}
+    conn.execute("UPDATE stores SET uses_weekly_offs=?, uses_comp_offs=?, leave_allowance=?, "
+                 "leave_year_start_month=?, leave_count_from=? WHERE store=?",
+                 (uses_wo, uses_co, allowance, month, values["leave_count_from"], store))
+    db.audit(conn, g.user["id"], "store.policy", store, values, ip())
+    conn.commit()
+    flash(f"Saved the leave rules for {store}.", "ok")
+    return redirect(url_for("admin.stores") + f"#s-{store}")
+
+
+@bp.route("/stores/<store>/tally", methods=["GET", "POST"])
+@auth.require_role("owner")
+def leave_tally(store):
+    """The hand tally: leaves each person had already taken this leave year
+    when the website started counting."""
+    from attendance import LeavePolicy
+    conn = db.get_db()
+    row = store_row(store)
+    policy = LeavePolicy.from_row(row)
+    if policy.allowance is None:
+        flash("Set a yearly leave allowance for this store first.", "error")
+        return redirect(url_for("admin.stores") + f"#s-{store}")
+    today = clock.today()
+    if request.method == "POST":
+        try:
+            as_of = date.fromisoformat(request.form.get("tally_as_of", "").strip())
+        except ValueError:
+            as_of = None
+        if as_of is None or as_of > today or as_of < today - timedelta(days=366):
+            flash("The tally date must be a real date in the last year, not in the future.", "error")
+            return redirect(url_for("admin.leave_tally", store=store))
+        year_start, _ = policy.year_of(as_of)
+        people = conn.execute("SELECT user_id FROM employees WHERE store=?", (store,)).fetchall()
+        saved = {}
+        for p in people:
+            raw = request.form.get(f"used_{p['user_id']}", "").strip()
+            if raw == "":
+                conn.execute("DELETE FROM leave_tally WHERE store=? AND user_id=? AND year_start=?",
+                             (store, p["user_id"], year_start.isoformat()))
+                continue
+            try:
+                used = int(raw)
+            except ValueError:
+                flash(f"#{p['user_id']}: '{raw}' isn't a whole number.", "error")
+                return redirect(url_for("admin.leave_tally", store=store))
+            if not 0 <= used <= 366:
+                flash(f"#{p['user_id']}: the number must be between 0 and 366.", "error")
+                return redirect(url_for("admin.leave_tally", store=store))
+            conn.execute("INSERT INTO leave_tally (store, user_id, year_start, used, set_by, set_at) "
+                         "VALUES (?,?,?,?,?,?) ON CONFLICT(store, user_id, year_start) DO UPDATE SET "
+                         "used=excluded.used, set_by=excluded.set_by, set_at=excluded.set_at",
+                         (store, p["user_id"], year_start.isoformat(), used, g.user["id"],
+                          db.utc_now_iso()))
+            saved[p["user_id"]] = used
+        conn.execute("UPDATE stores SET tally_as_of=? WHERE store=?", (as_of.isoformat(), store))
+        db.audit(conn, g.user["id"], "leave.tally", store,
+                 {"as_of": as_of.isoformat(), "used": saved}, ip())
+        conn.commit()
+        flash("Tally saved. The calendars now count from it.", "ok")
+        return redirect(url_for("admin.leave_tally", store=store))
+
+    as_of = policy.tally_as_of or today
+    year_start, _ = policy.year_of(as_of)
+    tallies = {r["user_id"]: r["used"] for r in conn.execute(
+        "SELECT user_id, used FROM leave_tally WHERE store=? AND year_start=?",
+        (store, year_start.isoformat()))}
+    now = clock.now_local()
+    data = StoreData(conn, store, now.date(), now.date(), now)
+    rows = []
+    for p in data.people:
+        a = data.allowance(p["user_id"])
+        rows.append({"p": p, "tally": tallies.get(p["user_id"]), "a": a})
+    return render_template("tally.html", store=row, rows=rows, as_of=as_of, policy=policy,
+                           year_start=year_start, today=today)
+
+
 MAX_SHIFTS = 6
 
 
@@ -525,6 +627,9 @@ def staff():
     groups = []
     for store in mine:
         row = store_row(store)
+        if not row["uses_weekly_offs"]:
+            groups.append((row, None))          # this store has no weekly offs
+            continue
         data = StoreData(conn, store, now.date(), now.date(), now)
         people = []
         for p in data.people:

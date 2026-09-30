@@ -4,7 +4,7 @@
 {% block body %}
 <h1>{{ 'My attendance' if is_self else (emp.name or emp.user_id) }} · {{ first.strftime('%B %Y') }}</h1>
 <p class="sub">{{ store.display_name }} · #{{ emp.user_id }}{% if not is_self %} {{ emp.name }}{% endif %}
-  · weekly off: <b>{{ wo_now|weekdays }}</b>{% if wo_from %} (from {{ wo_from|isodate }}){% endif %}
+  {% if uses_wo %}· weekly off: <b>{{ wo_now|weekdays }}</b>{% if wo_from %} (from {{ wo_from|isodate }}){% endif %}{% endif %}
   {% if not emp.on_device %} · <span class="pill">no longer on the device</span>{% endif %}</p>
 
 <div class="pager">
@@ -36,7 +36,7 @@
   {% endfor %}
   </tbody>
 </table>
-{{ legend() }}
+{{ legend(uses_co, uses_wo, uses_co) }}
 
 <div class="stats" style="margin-top:14px">
   <span><b>{{ totals.present }}</b> present</span><span><b>{{ totals.LT }}</b> late</span>
@@ -44,6 +44,19 @@
   <span><b>{{ totals.CO }}</b> comp-off</span><span><b>{{ totals.unapproved }}</b> unapproved</span>
 </div>
 
+{% if allow %}
+<h2>Leave this year</h2>
+<div class="card" style="max-width:560px">
+  <div style="font-size:18px"><b>{{ allow.used }}</b> of {{ allow.allowance }} used ·
+    {% if allow.left > 0 %}<b>{{ allow.left }} left</b>{% elif allow.left == 0 %}<span class="pill warn">none left</span>{% else %}<span class="pill bad">{{ -allow.left }} over</span>{% endif %}</div>
+  <div class="small muted" style="margin-top:4px">Leave year {{ allow.year_start|isodate }} – {{ allow.year_end|isodate }}.
+    {% if allow.before_tracking %}{{ allow.before_tracking }} taken before {{ (policy.count_from or allow.year_start)|isodate }} (from the tally).{% endif %}
+    {% if allow.auto %}{{ allow.auto|length }} absence{{ 's' if allow.auto|length != 1 }} counted as leave.{% endif %}
+    {% if allow.exhausted %}{{ allow.exhausted|length }} absence{{ 's' if allow.exhausted|length != 1 }} after all leaves were used.{% endif %}</div>
+</div>
+{% endif %}
+
+{% if uses_co %}
 <h2>Comp-offs</h2>
 {% if not comp_on and not credits %}
   <p class="muted small">Comp-offs aren't switched on yet.</p>
@@ -69,6 +82,8 @@
   {% endfor %}
   </tbody>
 </table>
+{% endif %}
+
 {% endif %}
 
 <h2>Leave requests</h2>

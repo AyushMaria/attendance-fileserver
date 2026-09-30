@@ -104,7 +104,13 @@ def month(store, month):
             continue
         if who and who not in p["name"].lower() and who != p["user_id"]:
             continue
-        rows.append({"person": p, "cells": cells, "totals": summarize(cells),
+        allow = None
+        if data.policy.allowance is not None and first <= now.date():
+            ref = min(last, now.date())
+            a = data.allowance(p["user_id"], ref)
+            used = a.used_by(ref)
+            allow = {"used": used, "left": a.allowance - used, "of": a.allowance}
+        rows.append({"person": p, "cells": cells, "totals": summarize(cells), "allow": allow,
                      "can_act": auth.can_act_for(g.user, store, p["user_id"], conn)})
     headcount = []
     for i, d in enumerate(days):
@@ -115,7 +121,9 @@ def month(store, month):
     return render_template(
         "month.html", store=row, first=first, days=days, rows=rows, headcount=headcount,
         prev=shift_month(first, -1).strftime("%Y-%m"), next=shift_month(first, 1).strftime("%Y-%m"),
-        this_month=now.strftime("%Y-%m"), today=now.date(), show_all=show_all, who=who)
+        this_month=now.strftime("%Y-%m"), today=now.date(), show_all=show_all, who=who,
+        uses_wo=data.uses_weekly_offs, uses_co=data.uses_comp_offs,
+        allowance=data.policy.allowance)
 
 
 # ----------------------------------------------------------------- day
@@ -231,6 +239,8 @@ def person(store, user_id, month):
         prev=shift_month(first, -1).strftime("%Y-%m"), next=shift_month(first, 1).strftime("%Y-%m"),
         this_month=now.strftime("%Y-%m"), is_self=auth.is_self(g.user, store, user_id),
         wo_now=wo_now, wo_from=wo_from, comp_on=data.cfg.comp_from is not None, cfg=data.cfg,
+        uses_wo=data.uses_weekly_offs, uses_co=data.uses_comp_offs,
+        allow=data.allowance(user_id), policy=data.policy,
         can_act=auth.can_act_for(g.user, store, user_id, conn))
 
 

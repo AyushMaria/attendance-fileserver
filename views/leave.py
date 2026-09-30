@@ -58,6 +58,9 @@ def preview_text(conn, store, user_id, start, end):
         worked = ", ".join(f"worked {fmt_day(c)}" for _d, c in covered)
         rest = n - len(covered)
         text += f" - {len(covered)} covered by comp-off ({worked}), {rest} leave"
+    a = data.allowance(user_id)
+    if a is not None:
+        text += f" · {max(a.left, 0)} of {a.allowance} leaves left this year"
     return text, n, covered
 
 
@@ -98,6 +101,7 @@ def my_leave():
     now = clock.now_local()
     data = StoreData(conn, store, now.date(), now.date(), now, user_ids=[user_id])
     credits = [c for c in data.credits(user_id) if c.status == "available"]
+    allow = data.allowance(user_id)
     rows = conn.execute(
         "SELECT l.*, u.display_name AS decided_by_name FROM leaves l "
         "LEFT JOIN users u ON u.id=l.decided_by WHERE l.store=? AND l.user_id=? "
@@ -108,7 +112,8 @@ def my_leave():
         lv = leave_from_row(r)
         requests_.append((r, len(working_days(lv.start, lv.end, wo))))
     return render_template("leave.html", error=error, form=form, requests=requests_,
-                           credits=credits, today=now.date(), max_comment=MAX_COMMENT)
+                           credits=credits, today=now.date(), max_comment=MAX_COMMENT,
+                           allow=allow)
 
 
 @bp.get("/leave/preview")

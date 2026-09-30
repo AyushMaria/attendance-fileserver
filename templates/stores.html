@@ -64,6 +64,24 @@
         <div class="field" style="flex:0 0 auto"><button type="submit" class="small">Add shift</button></div>
       </form>
     </details>
+    <details class="more" style="margin-bottom:8px" {{ 'open' if r.leave_allowance is not none }}><summary>Leave rules{% if r.leave_allowance is not none %}: {{ r.leave_allowance }} leaves a year{% endif %}{% if not r.uses_weekly_offs %} · no weekly offs{% endif %}{% if not r.uses_comp_offs %} · no comp-offs{% endif %}</summary>
+      <form method="post" action="{{ url_for('admin.store_policy', store=r.store) }}" style="margin-top:6px">
+        {{ csrf() }}
+        <label class="check"><input type="checkbox" name="uses_weekly_offs" {{ 'checked' if r.uses_weekly_offs }}> Staff have weekly offs</label>
+        <label class="check"><input type="checkbox" name="uses_comp_offs" {{ 'checked' if r.uses_comp_offs }}> Comp-offs for working a weekly off</label>
+        <div class="row" style="align-items:flex-end;margin-top:6px">
+          <div class="field"><label>Leaves allowed a year (empty = no limit)</label>
+            <input type="number" name="leave_allowance" min="0" max="366" value="{{ '' if r.leave_allowance is none else r.leave_allowance }}"></div>
+          <div class="field"><label>Leave year starts in</label>
+            <select name="leave_year_start_month">{% for m in range(1, 13) %}<option value="{{ m }}" {{ 'selected' if (r.leave_year_start_month or 6) == m }}>{{ ['January','February','March','April','May','June','July','August','September','October','November','December'][m-1] }}</option>{% endfor %}</select></div>
+          <div class="field"><label>Absences count as leave from</label>
+            <input type="date" name="leave_count_from" value="{{ r.leave_count_from or '' }}"></div>
+          <div class="field" style="flex:0 0 auto"><button type="submit" class="plain small">Save</button></div>
+        </div>
+        <p class="small muted" style="margin:0">With a yearly allowance, each absence uses one leave, oldest first, until none are left; after that absences stay as absences.
+          {% if r.leave_allowance is not none %}<a href="{{ url_for('admin.leave_tally', store=r.store) }}">Enter the leave tally</a>{% if r.tally_as_of %} (counted up to {{ r.tally_as_of|isodate }}){% endif %}.{% endif %}</p>
+      </form>
+    </details>
     <details class="more"><summary>Sync key</summary>
       <form method="post" action="{{ url_for('admin.store_key', store=r.store) }}" style="margin-top:8px">
         {{ csrf() }}<input type="hidden" name="action" value="enter">

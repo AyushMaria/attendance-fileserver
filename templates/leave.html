@@ -20,6 +20,10 @@
       <textarea id="r" name="reason" maxlength="{{ max_comment }}" required>{{ form['reason'] }}</textarea></div>
     <button type="submit">Send request</button>
   </form>
+  {% if allow %}
+    <p class="small" style="margin-bottom:0">You have <b>{{ [allow.left, 0]|max }} of {{ allow.allowance }}</b> leaves left this year
+      ({{ allow.year_start|isodate }} – {{ allow.year_end|isodate }}). An absence without a request also uses one.</p>
+  {% endif %}
   {% if credits %}
     <p class="small" style="margin-bottom:0">You have <b>{{ credits|length }}</b> comp-off{{ 's' if credits|length != 1 }}:
       {% for c in credits %}worked {{ c.day|isodate }}, usable until {{ c.until|isodate }}{{ '; ' if not loop.last }}{% endfor %}.

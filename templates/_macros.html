@@ -10,14 +10,14 @@
 <span class="code {{ kcls(code) }}" title="{{ CODE_LABELS.get(code, '') }}">{{ short(code) }}{% if plus %}⁺{% endif %}</span>
 {%- endmacro %}
 
-{% macro legend(show_plus=true) %}
+{% macro legend(show_plus=true, show_wo=true, show_co=true) %}
 <div class="legend">
   <span>{{ badge('P') }}present</span><span>{{ badge('LT') }}late</span>
-  <span>{{ badge('WO') }}weekly off</span><span>{{ badge('L') }}leave</span>
-  <span>{{ badge('CO') }}leave covered by comp-off</span>
+  {% if show_wo %}<span>{{ badge('WO') }}weekly off</span>{% endif %}<span>{{ badge('L') }}leave</span>
+  {% if show_co %}<span>{{ badge('CO') }}leave covered by comp-off</span>{% endif %}
   <span>{{ badge('A*') }}absent, leave pending</span><span>{{ badge('A') }}absent</span>
   <span>{{ badge('NOT_IN_YET') }}not in yet</span><span>{{ badge('NODATA') }}no punches at the store</span>
-  {% if show_plus %}<span>{{ badge('P', true) }}worked a weekly off, earned a comp-off</span>{% endif %}
+  {% if show_plus and show_co %}<span>{{ badge('P', true) }}worked a weekly off, earned a comp-off</span>{% endif %}
 </div>
 {% endmacro %}
 

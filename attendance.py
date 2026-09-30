@@ -158,6 +158,60 @@ class Cell:
 
 
 @dataclass
+class LeavePolicy:
+    """A store's leave allowance (the school: 7 a year, June to May)."""
+    allowance: int | None = None          # None = no allowance at this store
+    year_start_month: int = 6
+    count_from: date | None = None        # absences count as leave from this day
+    tally_as_of: date | None = None       # the hand tally covers up to this day
+
+    @classmethod
+    def from_row(cls, row):
+        keys = row.keys()
+
+        def d(k):
+            v = row[k] if k in keys else None
+            return date.fromisoformat(v) if v else None
+        return cls(row["leave_allowance"] if "leave_allowance" in keys else None,
+                   (row["leave_year_start_month"] if "leave_year_start_month" in keys else 6) or 6,
+                   d("leave_count_from"), d("tally_as_of"))
+
+    def year_of(self, day):
+        """(first, last) day of the leave year containing `day`."""
+        m = self.year_start_month
+        y = day.year if day.month >= m else day.year - 1
+        start = date(y, m, 1)
+        return start, date(y + 1, m, 1) - timedelta(days=1)
+
+
+@dataclass
+class Allowance:
+    """One person's leave year: which absences were counted as leave, and
+    the totals."""
+    year_start: date
+    year_end: date
+    allowance: int
+    tally: int = 0                 # from the hand tally
+    before_tracking: int = 0       # part of the tally from before tracking began
+    auto: dict = field(default_factory=dict)       # day -> "n of 7" for absences counted as leave
+    exhausted: set = field(default_factory=set)    # absences after the allowance ran out
+    counted: dict = field(default_factory=dict)    # day -> running total, every leave day counted
+    used: int = 0
+
+    @property
+    def left(self):
+        return self.allowance - self.used
+
+    def used_by(self, day):
+        """Leaves used up to and including `day`."""
+        total = self.before_tracking
+        for d, _n in self.counted.items():
+            if d <= day:
+                total += 1
+        return total
+
+
+@dataclass
 class Credit:
     day: date
     status: str          # available / used / expired
@@ -335,6 +389,12 @@ class StoreData:
         self.store = store
         self.rules = StoreRules.from_row(row, load_shifts(conn, store))
         self.cfg = CompConfig.load(conn)
+        keys = row.keys()
+        self.uses_weekly_offs = bool(row["uses_weekly_offs"]) if "uses_weekly_offs" in keys else True
+        self.uses_comp_offs = bool(row["uses_comp_offs"]) if "uses_comp_offs" in keys else True
+        if not self.uses_comp_offs:
+            self.cfg = CompConfig(self.cfg.min_hours, self.cfg.window_days, None)
+        self.policy = LeavePolicy.from_row(row)
 
         only = ""
         args = [store]
@@ -364,6 +424,8 @@ class StoreData:
         for r in conn.execute(f"SELECT * FROM comp_adjustments WHERE store=?{only}", args):
             target = self.cancels if r["kind"] == "cancel" else self.grants
             target.setdefault(r["user_id"], set()).add(date.fromisoformat(r["day"]))
+        if not self.uses_comp_offs:
+            self.cancels, self.grants = {}, {}
 
         # 4. comp-off history: first/last punch per person-day, far enough
         #    back to cover every comp-off and every leave day one could
@@ -373,6 +435,10 @@ class StoreData:
         if self.cfg.comp_from:
             starts.append(self.cfg.comp_from - window)
         starts += [min(days) - window for days in self.grants.values() if days]
+        if self.policy.allowance is not None:
+            # the whole leave year so far, from where absences start counting
+            year_start, _ = self.policy.year_of(first)
+            starts.append(max(year_start, self.policy.count_from or year_start))
         self.hist_from = min(starts)
         self.spans = {}            # user_id -> {day: (first, last)}
         for r in conn.execute(
@@ -389,7 +455,8 @@ class StoreData:
         # 5. weekly offs (all of them: they are dated)
         self.wo = {}
         wo_rows = {}
-        for r in conn.execute(f"SELECT * FROM weekly_offs WHERE store=?{only}", args):
+        for r in (conn.execute(f"SELECT * FROM weekly_offs WHERE store=?{only}", args)
+                  if self.uses_weekly_offs else ()):
             wo_rows.setdefault(r["user_id"], []).append(
                 (date.fromisoformat(r["effective_from"]), parse_weekdays(r["weekdays"]), r["id"]))
         for uid, rows in wo_rows.items():
@@ -406,7 +473,14 @@ class StoreData:
                 [store, self.hist_from.isoformat()] + (user_ids or [])):
             self.leaves.setdefault(r["user_id"], []).append(leave_from_row(r))
 
+        # 7. the hand tally of leaves already taken, per person and year
+        self.tally = {}
+        if self.policy.allowance is not None:
+            for r in conn.execute(f"SELECT * FROM leave_tally WHERE store=?{only}", args):
+                self.tally[(r["user_id"], r["year_start"])] = int(r["used"])
+
         self._comp_cache = {}
+        self._allow_cache = {}
 
     # --------------------------------------------------------- per person
 
@@ -459,6 +533,87 @@ class StoreData:
         self._comp_cache[key] = result
         return result
 
+    def _base(self, uid, day):
+        """(code, leave) for a past or current day, before any allowance:
+        P, L, A, A*, WO, NODATA or None (today, still going)."""
+        punches = self.spans.get(uid, {}).get(day) or self.punches.get((uid, day))
+        wo = self.wo_history(uid)
+        if not punches and not self.store_open_on(day):
+            return "NODATA", None
+        leaves = self.leaves_for(uid)
+        code, _note = day_status(day, bool(punches), wo.days_on(day), leaves)
+        if code in ("A", "A*") and day == self.today and self.now.time() < self.rules.day_end:
+            return None, None
+        return code, active_leave(day, leaves)
+
+    def allowance(self, user_id, day=None):
+        """The leave year containing `day` (default today) for a store with
+        a leave allowance, or None.
+
+        Up to the tally date, the hand tally is placed on the person's
+        leave and absence days, oldest first; whatever doesn't fit counts as
+        taken before tracking began. After it, each approved leave day or
+        absence uses one of what's left, oldest first, until none are left.
+        Absences with a pending or rejected request are never counted: they
+        wait for, or already have, a decision."""
+        pol = self.policy
+        if pol.allowance is None:
+            return None
+        uid = str(user_id)
+        ys, ye = pol.year_of(day or self.today)
+        key = (uid, ys)
+        if key in self._allow_cache:
+            return self._allow_cache[key]
+        a = Allowance(ys, ye, pol.allowance)
+        tally_on = pol.tally_as_of is not None and ys <= pol.tally_as_of <= ye
+        a.tally = self.tally.get((uid, ys.isoformat()), 0) if tally_on else 0
+        budget = a.tally                 # tally still to place on days
+        settled = not tally_on
+        used = 0                         # leaves counted so far this year
+
+        def settle():
+            # whatever of the tally didn't land on a day was taken before
+            # tracking began (June to August for the school)
+            nonlocal budget, used, settled
+            a.before_tracking = budget
+            used += budget
+            budget = 0
+            settled = True
+
+        start = max(ys, pol.count_from or ys)
+        for d in daterange(start, min(ye, self.today)):
+            if not settled and d > pol.tally_as_of:
+                settle()
+            code, lv = self._base(uid, d)
+            explicit = code == "L"                  # an approved leave request
+            absent = code == "A" and lv is None     # no request at all
+            if not (explicit or absent):
+                continue
+            if not settled:                          # covered by the tally
+                if budget > 0:
+                    budget -= 1
+                elif absent:
+                    continue                         # the tally says this wasn't leave
+                used += 1
+                a.counted[d] = used
+                if absent:
+                    a.auto[d] = used
+                continue
+            if explicit:
+                used += 1
+                a.counted[d] = used
+            elif used < pol.allowance:
+                used += 1
+                a.counted[d] = used
+                a.auto[d] = used
+            else:
+                a.exhausted.add(d)
+        if not settled:
+            settle()
+        a.used = used
+        self._allow_cache[key] = a
+        return a
+
     def cell(self, user_id, day):
         uid = str(user_id)
         punches = self.punches.get((uid, day), [])
@@ -481,6 +636,16 @@ class StoreData:
                 c.code = "LT"
         if c.code in ("A", "A*") and day == self.today and self.now.time() < self.rules.day_end:
             c.code = "NOT_IN_YET"
+        if self.policy.allowance is not None and c.code in ("A", "L"):
+            a = self.allowance(uid, day)
+            if day in a.auto:
+                c.code = "L"
+                c.note = f"absence counted as leave ({a.used_by(day)} of {a.allowance} this year)"
+            elif c.code == "L" and day in a.counted:
+                c.note = (f"{c.note} · " if c.note else "") + \
+                    f"leave {a.used_by(day)} of {a.allowance} this year"
+            elif day in a.exhausted:
+                c.note = f"all {a.allowance} leaves for the year already used"
         if day in credits:
             c.comp_earned = True
             c.comp_note = self._credit_note(day, matches)

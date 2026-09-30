@@ -27,8 +27,9 @@
   <thead><tr>
     <th class="name">Person</th>
     {% for d in days %}<th class="{{ 'today' if d == today }} {{ 'wk' if d.weekday() >= 5 }}" title="{{ d|dayfmt }}"><a href="{{ url_for('main.day', store=store.store, day=d.isoformat()) }}" style="color:inherit;text-decoration:none">{{ d.day }}<br><span style="font-weight:400">{{ 'MTWTFSS'[d.weekday()] }}</span></a></th>{% endfor %}
-    <th class="first" title="Present (incl. late)">Pres</th><th title="Late">Late</th><th title="Weekly off">WO</th>
-    <th title="Leave">Leave</th><th title="Comp-off">CO</th><th title="Unapproved absences (A and A*)">Unappr</th>
+    <th class="first" title="Present (incl. late)">Pres</th><th title="Late">Late</th>{% if uses_wo %}<th title="Weekly off">WO</th>{% endif %}
+    <th title="Leave this month">Leave</th>{% if uses_co %}<th title="Comp-off">CO</th>{% endif %}<th title="Unapproved absences (A and A*)">Unappr</th>
+    {% if allowance is not none %}<th title="Leaves used this leave year, up to the end of this month (or today)">Used/{{ allowance }}</th><th title="Leaves left">Left</th>{% endif %}
   </tr></thead>
   <tbody>
   {% for r in rows %}
@@ -51,19 +52,21 @@
         {% else %}<td></td>{% endif %}
       {% endfor %}
       {% set t = r.totals %}
-      <td class="tot first">{{ t.present }}</td><td class="tot">{{ t.LT }}</td><td class="tot">{{ t.WO }}</td>
-      <td class="tot">{{ t.L }}</td><td class="tot">{{ t.CO }}</td><td class="tot">{{ t.unapproved }}</td>
+      <td class="tot first">{{ t.present }}</td><td class="tot">{{ t.LT }}</td>{% if uses_wo %}<td class="tot">{{ t.WO }}</td>{% endif %}
+      <td class="tot">{{ t.L }}</td>{% if uses_co %}<td class="tot">{{ t.CO }}</td>{% endif %}<td class="tot">{{ t.unapproved }}</td>
+      {% if allowance is not none %}{% set al = r.allow %}<td class="tot">{{ al.used if al else '' }}</td>
+      <td class="tot" style="{{ 'color:#9b2218;font-weight:600' if al and al.left <= 0 }}">{{ al.left if al else '' }}</td>{% endif %}
     </tr>
   {% endfor %}
   </tbody>
   <tfoot><tr>
     <td class="name">In that day</td>
     {% for n in headcount %}<td class="num">{{ '' if n is none else n }}</td>{% endfor %}
-    <td colspan="6"></td>
+    <td colspan="{{ 4 + (1 if uses_wo else 0) + (1 if uses_co else 0) + (2 if allowance is not none else 0) }}"></td>
   </tr></tfoot>
 </table>
 </div>
-{{ legend() }}
+{{ legend(uses_co, uses_wo, uses_co) }}
 <p class="small muted">Click a day for details. Totals count up to today and leave out days with no punches at the store.</p>
 {% endif %}
 

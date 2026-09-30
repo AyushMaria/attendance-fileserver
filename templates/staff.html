@@ -8,7 +8,8 @@
 
 {% for store, people in groups %}
 <h2>{{ store.display_name }}</h2>
-{% if not people %}<p class="muted">No staff yet. They appear after the store's first sync.</p>{% else %}
+{% if people is none %}<p class="muted">{{ store.display_name }} doesn't use weekly offs.</p>
+{% elif not people %}<p class="muted">No staff yet. They appear after the store's first sync.</p>{% else %}
 <div class="scroll"><table class="list">
   <thead><tr><th>#</th><th>Name</th><th>Login</th><th>Weekly off</th><th></th></tr></thead>
   <tbody>

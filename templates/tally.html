@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Leave tally · {{ store.display_name }}{% endblock %}
+{% block body %}
+<h1>Leave tally · {{ store.display_name }}</h1>
+<p class="sub">How many of the {{ policy.allowance }} leaves each person had taken this leave year (from {{ year_start|isodate }})
+  up to the tally date, from your own records. The website places this number on their leave and absence days
+  from {{ (policy.count_from or year_start)|isodate }} to the tally date, oldest first; whatever doesn't fit counts as
+  taken before then. After the tally date, each absence uses one of the leaves left, oldest first.</p>
+
+<form method="post">
+  {{ csrf() }}
+  <div class="card" style="max-width:520px;margin-bottom:14px">
+    <div class="field" style="margin:0"><label for="asof">Tally counted up to (and including)</label>
+      <input id="asof" type="date" name="tally_as_of" value="{{ as_of.isoformat() }}" max="{{ today.isoformat() }}" required></div>
+  </div>
+  <div class="scroll"><table class="list">
+    <thead><tr><th>#</th><th>Name</th><th>Leaves taken (tally)</th><th>Now</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      {% set p = r.p %}{% set a = r.a %}
+      <tr style="{{ 'opacity:.55' if not p.on_device }}">
+        <td class="num">{{ p.user_id }}</td>
+        <td>{{ p.name or '—' }}</td>
+        <td><input type="number" name="used_{{ p.user_id }}" value="{{ '' if r.tally is none else r.tally }}"
+                   min="0" max="366" style="width:90px" aria-label="Leaves taken by {{ p.name }}"></td>
+        <td class="small">{% if a %}{{ a.used }} of {{ a.allowance }} used ·
+          {% if a.left > 0 %}<b>{{ a.left }} left</b>{% elif a.left == 0 %}<span class="pill warn">none left</span>{% else %}<span class="pill bad">{{ -a.left }} over</span>{% endif %}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="small muted">Leave a box empty for someone not in your tally (counted as 0).</p>
+  <button type="submit">Save tally</button>
+  <a class="btn plain" href="{{ url_for('admin.stores') }}#s-{{ store.store }}">Back to Stores</a>
+</form>
+{% endblock %}
