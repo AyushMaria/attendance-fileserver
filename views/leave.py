@@ -324,6 +324,51 @@ def record():
     return redirect(url_for("leave.approvals"))
 
 
+MARK_CODES = {"P": "present", "LT": "late", "A": "absent", "WO": "weekly off"}
+
+
+@bp.post("/mark")
+@auth.require_role("owner", "manager")
+def mark_day():
+    """Set, or clear, one person's status for one day by hand - for a
+    forgotten punch, a punch made for someone else, a swapped day off."""
+    conn = db.get_db()
+    store, user_id = form_person(conn)
+    day = form_date("day")
+    code = request.form.get("code", "")
+    note = request.form.get("note", "").strip()[:MAX_COMMENT]
+    back = request.form.get("back") or url_for("main.home")
+    if not back.startswith("/") or back.startswith("//"):
+        back = url_for("main.home")
+    if day is None or day > clock.today() or day < clock.today() - timedelta(days=366):
+        flash("Choose a day in the last year that has already happened.", "error")
+        return redirect(back)
+    target = f"{store}:{user_id}:{day.isoformat()}"
+    if code == "clear":
+        removed = conn.execute("DELETE FROM day_overrides WHERE store=? AND user_id=? AND day=?",
+                               (store, user_id, day.isoformat())).rowcount
+        if removed:
+            db.audit(conn, g.user["id"], "day.clear", target, {"note": note}, auth.client_ip())
+            conn.commit()
+            flash("Correction removed - the day follows the punches again.", "ok")
+        return redirect(back)
+    if code not in MARK_CODES:
+        abort(400)
+    if not note:
+        flash("Give a reason (e.g. forgot to punch) - it's shown on the calendar and kept in the "
+              "activity log.", "error")
+        return redirect(back)
+    conn.execute(
+        "INSERT INTO day_overrides (store, user_id, day, code, note, set_by, set_at) VALUES "
+        "(?,?,?,?,?,?,?) ON CONFLICT(store, user_id, day) DO UPDATE SET code=excluded.code, "
+        "note=excluded.note, set_by=excluded.set_by, set_at=excluded.set_at",
+        (store, user_id, day.isoformat(), code, note, g.user["id"], db.utc_now_iso()))
+    db.audit(conn, g.user["id"], "day.mark", target, {"code": code, "note": note}, auth.client_ip())
+    conn.commit()
+    flash(f"Marked {MARK_CODES[code]} for {fmt_day(day)}.", "ok")
+    return redirect(back)
+
+
 @bp.post("/comp/<kind>")
 @auth.require_role("owner", "manager")
 def comp_adjust(kind):

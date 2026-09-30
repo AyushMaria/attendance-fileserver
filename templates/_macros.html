@@ -18,6 +18,7 @@
   <span>{{ badge('A*') }}absent, leave pending</span><span>{{ badge('A') }}absent</span>
   <span>{{ badge('NOT_IN_YET') }}not in yet</span><span>{{ badge('NODATA') }}no punches at the store</span>
   {% if show_plus and show_co %}<span>{{ badge('P', true) }}worked a weekly off, earned a comp-off</span>{% endif %}
+  <span><span class="code k-P">P<sup style="color:#1f3a5f">✎</sup></span> corrected by hand</span>
 </div>
 {% endmacro %}
 

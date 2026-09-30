@@ -148,8 +148,12 @@ def day(store, day):
     counts = summarize([c for _, c in present] + [c for _, c in absent])
     counts["on_wo"] = sum(1 for _, c in present if c.weekly_off)
     timeline = build_timeline(present, data.rules, d)
+    conn = db.get_db()
+    can_act = {p["user_id"] for p, _c in present + absent
+               if auth.can_act_for(g.user, store, p["user_id"], conn)}
     return render_template(
         "day.html", store=row, day=d, present=present, absent=absent, counts=counts,
+        can_act=can_act, uses_wo=data.uses_weekly_offs,
         timeline=timeline, prev=(d - timedelta(days=1)).isoformat(),
         next=(d + timedelta(days=1)).isoformat(), today=now.date(), rules=data.rules,
         is_today=(d == now.date()), store_open=data.store_open_on(d))

@@ -143,6 +143,7 @@ class Cell:
     comp_note: str = ""              # "covers leave on 2 Oct" / "available until 27 Oct" / ...
     weekly_off: bool = False
     shift: "Shift | None" = None     # the shift they were counted on (days they came in)
+    manual: dict | None = None       # a correction made by hand: code, note, by, at
 
     @property
     def first(self):
@@ -473,7 +474,17 @@ class StoreData:
                 [store, self.hist_from.isoformat()] + (user_ids or [])):
             self.leaves.setdefault(r["user_id"], []).append(leave_from_row(r))
 
-        # 7. the hand tally of leaves already taken, per person and year
+        # 7. corrections made by hand
+        self.overrides = {}
+        for r in conn.execute(
+                f"SELECT o.*, u.display_name AS by_name FROM day_overrides o "
+                f"LEFT JOIN users u ON u.id = o.set_by WHERE o.store=? AND o.day >= ?"
+                f"{only.replace('user_id', 'o.user_id')}",
+                [store, self.hist_from.isoformat()] + (user_ids or [])):
+            self.overrides[(r["user_id"], date.fromisoformat(r["day"]))] = {
+                "code": r["code"], "note": r["note"], "by": r["by_name"] or "", "at": r["set_at"]}
+
+        # 8. the hand tally of leaves already taken, per person and year
         self.tally = {}
         if self.policy.allowance is not None:
             for r in conn.execute(f"SELECT * FROM leave_tally WHERE store=?{only}", args):
@@ -536,6 +547,9 @@ class StoreData:
     def _base(self, uid, day):
         """(code, leave) for a past or current day, before any allowance:
         P, L, A, A*, WO, NODATA or None (today, still going)."""
+        ov = self.overrides.get((uid, day))
+        if ov is not None:
+            return ("P" if ov["code"] == "LT" else ov["code"]), None
         punches = self.spans.get(uid, {}).get(day) or self.punches.get((uid, day))
         wo = self.wo_history(uid)
         if not punches and not self.store_open_on(day):
@@ -622,7 +636,7 @@ class StoreData:
         if day > self.today:
             return Cell(day, None, weekly_off=on_wo, leave=active_leave(day, self.leaves_for(uid)))
         credits, matches = self.comp(uid)
-        if not punches and not self.store_open_on(day):
+        if not punches and not self.store_open_on(day) and (uid, day) not in self.overrides:
             return Cell(day, "NODATA", "no punches from anyone at the store", weekly_off=on_wo)
         leaves = self.leaves_for(uid)
         code, note = day_status(day, bool(punches), wo.days_on(day), leaves)
@@ -636,6 +650,13 @@ class StoreData:
                 c.code = "LT"
         if c.code in ("A", "A*") and day == self.today and self.now.time() < self.rules.day_end:
             c.code = "NOT_IN_YET"
+        ov = self.overrides.get((uid, day))
+        if ov is not None:
+            c.code = ov["code"]
+            c.manual = ov
+            label = CODE_LABELS[ov["code"]].lower()
+            c.note = f"marked {label} by {ov['by'] or 'someone'}: {ov['note']}"
+            c.comp_note = ""
         if self.policy.allowance is not None and c.code in ("A", "L"):
             a = self.allowance(uid, day)
             if day in a.auto:

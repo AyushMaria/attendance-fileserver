@@ -140,6 +140,20 @@ CREATE TABLE IF NOT EXISTS shifts (
     grace_minutes INTEGER NOT NULL DEFAULT 10
 );
 
+-- a day's status set by hand (forgot to punch, punched for someone else,
+-- ...); wins over what the punches say
+CREATE TABLE IF NOT EXISTS day_overrides (
+    id       INTEGER PRIMARY KEY,
+    store    TEXT NOT NULL,
+    user_id  TEXT NOT NULL,
+    day      TEXT NOT NULL,
+    code     TEXT NOT NULL CHECK (code IN ('P','LT','A','WO')),
+    note     TEXT NOT NULL,
+    set_by   INTEGER REFERENCES users(id),
+    set_at   TEXT NOT NULL,
+    UNIQUE (store, user_id, day)
+);
+
 -- leaves already taken in a leave year before the website tracked them
 -- (the hand tally), per person
 CREATE TABLE IF NOT EXISTS leave_tally (

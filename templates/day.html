@@ -51,7 +51,7 @@
       {% for x, t in b.dots %}<circle cx="{{ x }}%" cy="11" r="4.5" fill="{{ '#b78900' if b.late and loop.first else '#1f3a5f' }}"><title>{{ t }}</title></circle>{% endfor %}
     </svg>
     <span class="when">{{ c.punches[0].strftime('%H:%M') }}{% if c.last %} – {{ c.last.strftime('%H:%M') }}{% else %} · no check-out{% endif %}
-      {% if b.late %} {{ badge('LT') }}{% endif %}{% if c.weekly_off %} <span class="pill" title="Worked on their weekly off">WO{% if c.comp_earned %}⁺{% endif %}</span>{% endif %}</span>
+      {% if b.late %} {{ badge('LT') }}{% endif %}{% if c.manual %} <span class="pill" title="{{ c.note }}">✎ {{ CODE_LABELS[c.code] }}</span>{% endif %}{% if c.weekly_off %} <span class="pill" title="Worked on their weekly off">WO{% if c.comp_earned %}⁺{% endif %}</span>{% endif %}</span>
   </div>
   {% endfor %}
   {% endfor %}
@@ -60,7 +60,7 @@
 {% endif %}
 
 {% if absent and day <= today %}
-<h2>Not in</h2>
+<h2>No punches</h2>
 <table class="list">
   <tbody>
   {% for p, c in absent %}
@@ -70,6 +70,19 @@
       <td>{{ CODE_LABELS.get(c.code, '') }}{% if c.note %} — {{ c.note }}{% endif %}
         {% if c.leave and c.leave.status == 'approved' and c.leave.decided_by_name %}<span class="muted"> (approved by {{ c.leave.decided_by_name }})</span>{% endif %}
         {% if c.comp_note %}<div class="small muted">{{ c.comp_note }}</div>{% endif %}</td>
+      <td>{% if p.user_id in can_act and day <= today %}
+        <details class="more"><summary>{{ 'Change' if c.manual else 'Mark present' }}</summary>
+          <form method="post" action="{{ url_for('leave.mark_day') }}" style="margin-top:6px;min-width:220px">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="person" value="{{ store.store }}:{{ p.user_id }}">
+            <input type="hidden" name="day" value="{{ day.isoformat() }}">
+            <input type="hidden" name="back" value="{{ request.path }}">
+            <select name="code" aria-label="Status"><option value="P">Present</option><option value="LT">Late</option>
+              <option value="A">Absent</option>{% if uses_wo %}<option value="WO">Weekly off</option>{% endif %}
+              {% if c.manual %}<option value="clear">Undo correction</option>{% endif %}</select>
+            <input type="text" name="note" maxlength="300" placeholder="Why, e.g. forgot to punch" style="margin-top:6px" aria-label="Reason">
+            <button type="submit" class="small" style="margin-top:6px">Save</button>
+          </form></details>{% endif %}</td>
     </tr>
   {% endfor %}
   </tbody>
