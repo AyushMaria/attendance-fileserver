@@ -41,6 +41,7 @@ def app(tmp_path, now):
         "SESSION_COOKIE_SECURE": False,
         "WTF_CSRF_ENABLED": False,
         "STORAGE_DIR": str(tmp_path),
+        "ROSTER_DIR": tmp_path / "no-rosters",      # tests that need rosters set their own
     })
     return application
 

@@ -84,6 +84,8 @@ def create_app(overrides=None):
         if app.config["DEMO_DATA"]:
             import demo
             demo.seed(conn)
+        import roster
+        roster.apply_all(conn, app.config.get("ROSTER_DIR", roster.ROSTER_DIR))
     finally:
         conn.close()
     return app

@@ -10,7 +10,7 @@ import re
 import hmac
 from datetime import datetime, timedelta
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 import clock
 import db
@@ -159,6 +159,14 @@ def sync():
              {"received": len(rows), "new": new, "staff": len(people)},
              ip=request.remote_addr or "")
     conn.commit()
+    if has_staff:
+        # a roster that arrived before this store's staff were known
+        try:
+            import roster
+            roster.apply_store(conn, store, roster.rosters(
+                current_app.config.get("ROSTER_DIR", roster.ROSTER_DIR)).get(store))
+        except Exception as e:  # noqa: BLE001 - never fail a sync over this
+            current_app.logger.warning("roster for %s not applied: %s", store, e)
     return jsonify({"punches_received": len(rows), "new_punches": new, "staff": len(people)})
 
 
