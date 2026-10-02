@@ -119,3 +119,41 @@ def test_old_users_table_rebuilt_keeping_everything(tmp_path):
     with pytest.raises(sqlite3.IntegrityError):              # a CRO still needs a device person
         conn.execute("INSERT INTO users (username, display_name, password_hash, role, created_at, "
                      "password_changed_at) VALUES ('x','X','h','cro','x','x')")
+
+
+def test_external_manager(world, as_user, conn, make):
+    make.store("nirala")
+    r = as_user(world["owner"]).post("/users/new", data={
+        "username": "omkar", "display_name": "Omkar", "role": "manager", "person": "",
+        "stores": ["mall", "nirala"], "password": "a-long-pass"})
+    assert b"Account created" in r.data
+    row = conn.execute("SELECT id, role, emp_user_id FROM users WHERE username='omkar'").fetchone()
+    assert (row["role"], row["emp_user_id"]) == ("manager", None)
+    c = as_user(row["id"])
+    assert c.get("/leave").status_code == 404                     # no leave of his own
+    assert ">My leave" not in c.get("/calendar/mall/2026-10").data.decode()
+    assert c.get("/calendar/nirala/2026-10").status_code == 200
+    assert c.get("/calendar/school/2026-10").status_code == 404   # only his stores
+    assert c.post(f"/approvals/{world['leave']}/decide", data={"decision": "approve"}).status_code == 302
+    assert conn.execute("SELECT status FROM leaves WHERE id=?", (world["leave"],)).fetchone()[0] == "approved"
+    # a CRO still needs a device person
+    r = as_user(world["owner"]).post("/users/new", data={
+        "username": "nobody", "display_name": "N", "role": "cro", "person": "", "password": "a-long-pass"})
+    assert b"Choose the person" in r.data
+
+
+def test_admin_era_table_upgraded_for_external_managers(tmp_path):
+    path = tmp_path / "v2.db"
+    c = sqlite3.connect(path)
+    c.executescript(FIRST_RELEASE_USERS.replace(
+        "CHECK (role IN ('owner','manager','cro'))", "CHECK (role IN ('owner','admin','manager','cro'))").replace(
+        "CHECK ((role = 'owner') = (emp_user_id IS NULL))", "CHECK ((role IN ('owner','admin')) = (emp_user_id IS NULL))"))
+    c.commit()
+    c.close()
+    db.init_db(str(path))
+    conn = db.connect(str(path))
+    assert [r[0] for r in conn.execute("SELECT username FROM users ORDER BY id")] == ["ayush", "imran3", "saif4"]
+    conn.execute("INSERT INTO users (username, display_name, password_hash, role, created_at, "
+                 "password_changed_at) VALUES ('omkar','Omkar','h','manager','x','x')")
+    conn.commit()
+    assert conn.execute("PRAGMA foreign_key_check").fetchall() == []

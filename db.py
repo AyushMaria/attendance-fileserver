@@ -34,8 +34,11 @@ USERS_DDL = """CREATE TABLE IF NOT EXISTS users (
     last_login_ip       TEXT,
     password_changed_at TEXT NOT NULL,
     must_change_password INTEGER NOT NULL DEFAULT 0,
-    -- Owner and Admin logins are not anyone on a device; Managers and CROs are
-    CHECK ((role IN ('owner','admin')) = (emp_user_id IS NULL)),
+    -- users v3: Owner and Admin logins are never anyone on a device, a CRO
+    -- always is, and a Manager may be either (an external area manager isn't)
+    CHECK ((role IN ('owner','admin') AND emp_user_id IS NULL)
+           OR role = 'manager'
+           OR (role = 'cro' AND emp_user_id IS NOT NULL)),
     UNIQUE (emp_store, emp_user_id)
 );"""
 
@@ -89,8 +92,11 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_ip       TEXT,
     password_changed_at TEXT NOT NULL,
     must_change_password INTEGER NOT NULL DEFAULT 0,
-    -- Owner and Admin logins are not anyone on a device; Managers and CROs are
-    CHECK ((role IN ('owner','admin')) = (emp_user_id IS NULL)),
+    -- users v3: Owner and Admin logins are never anyone on a device, a CRO
+    -- always is, and a Manager may be either (an external area manager isn't)
+    CHECK ((role IN ('owner','admin') AND emp_user_id IS NULL)
+           OR role = 'manager'
+           OR (role = 'cro' AND emp_user_id IS NOT NULL)),
     UNIQUE (emp_store, emp_user_id)
 );
 
@@ -238,12 +244,12 @@ def rebuild_users_for_admin(conn):
     def current_sql():
         row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").fetchone()
         return row["sql"] if row else ""
-    if "'admin'" in current_sql():
+    if "users v3" in current_sql():
         return False
     conn.execute("PRAGMA foreign_keys=OFF")
     try:
         conn.execute("BEGIN IMMEDIATE")
-        if "'admin'" in current_sql():          # the other process just did it
+        if "users v3" in current_sql():         # the other process just did it
             conn.rollback()
             return False
         ddl = USERS_DDL.replace("IF NOT EXISTS users", "users_new")

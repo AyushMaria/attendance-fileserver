@@ -67,7 +67,8 @@ def preview_text(conn, store, user_id, start, end):
 # ----------------------------------------------------------------- own leave
 
 def own_person():
-    if g.user["role"] not in ("cro", "manager"):
+    # an external Manager (not on any device) has no leave of their own
+    if g.user["role"] not in ("cro", "manager") or g.user["emp_user_id"] is None:
         abort(404)
     return g.user["emp_store"], g.user["emp_user_id"]
 

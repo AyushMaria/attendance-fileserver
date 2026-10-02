@@ -135,7 +135,7 @@ def stores_for(user, conn=None):
 
 
 def is_self(user, store, user_id):
-    return (user is not None and user["emp_store"] == store
+    return (user is not None and user["emp_user_id"] is not None and user["emp_store"] == store
             and str(user["emp_user_id"]) == str(user_id))
 
 

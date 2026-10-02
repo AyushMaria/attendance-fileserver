@@ -37,7 +37,7 @@ def home():
         cards.append({"row": row, "totals": summarize(cells), "people": len(cells),
                       "stale": stale})
     own_month = None
-    if g.user["role"] == "manager":
+    if g.user["role"] == "manager" and g.user["emp_user_id"] is not None:
         own_month = now.strftime("%Y-%m")
     return render_template("home.html", cards=cards, today=now.date(),
                            pending=len(pending_for(g.user, conn)), own_month=own_month)

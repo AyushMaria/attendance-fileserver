@@ -537,7 +537,8 @@ def account_form(conn, editing=None):
         return None, "Give a display name."
     values = {"role": role, "display_name": display, "emp_store": None, "emp_user_id": None,
               "stores": []}
-    if role not in ("owner", "admin"):
+    external = role == "manager" and not person      # e.g. an area manager on no device
+    if role not in ("owner", "admin") and not external:
         store, _, uid = person.partition(":")
         emp = conn.execute("SELECT * FROM employees WHERE store=? AND user_id=?",
                            (store, uid)).fetchone()
