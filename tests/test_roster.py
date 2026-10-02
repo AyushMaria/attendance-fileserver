@@ -76,3 +76,12 @@ def test_applied_at_startup_when_staff_already_known(tmp_path, now, make, conn):
 def test_the_real_office_roster_parses():
     names, _ = roster.load(Path(__file__).resolve().parent.parent / "rosters" / "office.csv")
     assert len(names) == 31 and names["2"] == "Aliya Shirin" and names["139"] == "Faizan Khan (Account)"
+
+
+def test_roster_files_are_not_ignored_by_git():
+    """A roster that git ignores never reaches the website."""
+    import subprocess
+    root = Path(__file__).resolve().parent.parent
+    for f in (root / "rosters").glob("*.csv"):
+        r = subprocess.run(["git", "check-ignore", "-q", str(f)], cwd=root)
+        assert r.returncode == 1, f"{f.name} is ignored by .gitignore"

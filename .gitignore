@@ -12,6 +12,8 @@ attendance_reports/
 *.xlsx
 *.xls
 *.csv
+# ...except the store rosters, which are code
+!rosters/*.csv
 
 # Logs written by the scripts
 *_log.txt
