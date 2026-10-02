@@ -554,6 +554,10 @@ def account_form(conn, editing=None):
         if not covers or not set(covers) <= known:
             return None, "Tick the store(s) this Manager covers."
         values["stores"] = covers
+    if role == "admin":              # none ticked = every store
+        if not set(covers) <= set(auth.all_stores(conn)):
+            return None, "Unknown store."
+        values["stores"] = covers
     return values, None
 
 

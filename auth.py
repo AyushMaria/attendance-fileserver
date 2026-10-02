@@ -126,8 +126,12 @@ def stores_for(user, conn=None):
     conn = conn or db.get_db()
     if user is None:
         return set()
-    if user["role"] in ("owner", "admin"):     # Admin: every store, view only
+    if user["role"] == "owner":
         return set(all_stores(conn))
+    if user["role"] == "admin":     # view only: the ticked stores, or every store if none are
+        ticked = {r["store"] for r in conn.execute(
+            "SELECT store FROM user_stores WHERE user_id=?", (user["id"],))}
+        return ticked or set(all_stores(conn))
     if user["role"] == "manager":
         return {r["store"] for r in conn.execute(
             "SELECT store FROM user_stores WHERE user_id=?", (user["id"],))}

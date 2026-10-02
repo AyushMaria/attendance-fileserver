@@ -157,3 +157,45 @@ def test_admin_era_table_upgraded_for_external_managers(tmp_path):
                  "password_changed_at) VALUES ('omkar','Omkar','h','manager','x','x')")
     conn.commit()
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_admin_limited_to_ticked_stores(world, as_user, conn, make):
+    """e.g. Omkar: an area manager who only watches Mall and Nirala."""
+    make.store("nirala")
+    r = as_user(world["owner"]).post("/users/new", data={
+        "username": "omkar", "display_name": "Omkar", "role": "admin", "person": "",
+        "stores": ["mall", "nirala"], "password": "a-long-pass"})
+    assert b"Account created" in r.data
+    row = conn.execute("SELECT id, role, emp_user_id FROM users WHERE username='omkar'").fetchone()
+    assert (row["role"], row["emp_user_id"]) == ("admin", None)
+    c = as_user(row["id"])
+    assert c.get("/calendar/mall/2026-10").status_code == 200
+    assert c.get("/calendar/nirala/2026-10").status_code == 200
+    assert c.get("/calendar/school/2026-10").status_code == 404
+    assert c.get("/person/school/7/2026-10").status_code == 404
+    home = c.get("/").data.decode()
+    assert "Mall" in home and "School" not in home
+    for path in ("/approvals", "/staff", "/leave"):
+        assert c.get(path).status_code == 404, path
+    for path, data in [("/approvals/%d/decide" % world["leave"], {"decision": "approve"}),
+                       ("/approvals/record", {"person": "mall:101", "from": "2026-10-11", "to": "2026-10-11"}),
+                       ("/comp/grant", {"person": "mall:101", "day": "2026-10-04", "note": "x"}),
+                       ("/staff/weekly-off", {"person": "mall:101", "days": ["6"], "from": "2026-10-01"})]:
+        assert c.post(path, data=data).status_code == 404, path
+    assert conn.execute("SELECT status FROM leaves WHERE id=?", (world["leave"],)).fetchone()[0] == "pending"
+    # an Admin with no stores ticked still sees everything
+    assert as_user(world["admin"]).get("/calendar/school/2026-10").status_code == 200
+
+
+def test_manager_switched_to_admin(world, as_user, conn, make):
+    make.store("nirala")
+    o = as_user(world["owner"])
+    o.post("/users/new", data={"username": "omkar", "display_name": "Omkar", "role": "manager",
+                               "person": "", "stores": ["mall", "nirala"], "password": "a-long-pass"})
+    uid = conn.execute("SELECT id FROM users WHERE username='omkar'").fetchone()[0]
+    assert o.post(f"/users/{uid}/edit", data={"display_name": "Omkar", "role": "admin", "person": "",
+                                              "stores": ["mall", "nirala"]}).status_code == 302
+    assert conn.execute("SELECT role FROM users WHERE id=?", (uid,)).fetchone()[0] == "admin"
+    assert sorted(r[0] for r in conn.execute("SELECT store FROM user_stores WHERE user_id=?", (uid,))) \
+        == ["mall", "nirala"]
+    assert as_user(uid).get("/approvals").status_code == 404

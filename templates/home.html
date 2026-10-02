@@ -4,7 +4,7 @@
 {% block body %}
 <h1>Today · {{ today|isodate }}</h1>
 <p class="sub">
-  {% if me.role == 'admin' %}View only - every location's attendance.
+  {% if me.role == 'admin' %}View only.
   {% elif pending %}<a href="{{ url_for('leave.approvals') }}"><b>{{ pending }}</b> leave request{{ 's' if pending != 1 }} waiting for you</a>
   {% else %}No leave requests waiting.{% endif %}
   {% if own_month %} · <a href="{{ url_for('main.person', store=me.emp_store, user_id=me.emp_user_id, month=own_month) }}">My attendance</a>{% endif %}
