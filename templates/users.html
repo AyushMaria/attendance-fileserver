@@ -27,7 +27,7 @@
     <tr>
       <td><a href="{{ url_for('admin.edit_user', uid=u.id) }}">{{ u.username }}</a></td>
       <td>{{ u.display_name }}</td>
-      <td>{{ {'owner':'Owner','manager':'Manager','cro':'CRO'}[u.role] }}</td>
+      <td>{{ {'owner':'Owner','admin':'Admin','manager':'Manager','cro':'CRO'}[u.role] }}</td>
       <td>{% if u.role == 'manager' %}{{ u.covers or '—' }} · {% endif %}{% if u.emp_user_id %}{{ u.emp_store }} #{{ u.emp_user_id }} {{ u.emp_name or '' }}{% else %}—{% endif %}</td>
       <td>{% if u.active and u.must_change_password %}<span class="pill">first sign-in pending</span> {% endif %}{% if u.active %}{% if u.locked_until and u.locked_until > now_iso %}<span class="pill warn">locked</span>{% else %}<span class="pill good">active</span>{% endif %}{% else %}<span class="pill">inactive</span>{% endif %}</td>
       <td class="nowrap">{{ u.last_login_at|localtime('%d %b, %H:%M') or 'never' }}</td>

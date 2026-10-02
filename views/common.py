@@ -59,7 +59,7 @@ def shift_month(first, delta):
 def pending_for(user, conn=None):
     """Pending leave requests this person may decide on."""
     conn = conn or db.get_db()
-    if user is None or user["role"] == "cro":
+    if user is None or user["role"] not in ("owner", "manager"):
         return []
     rows = conn.execute(
         "SELECT l.*, e.name AS emp_name, u.role AS emp_role FROM leaves l "
@@ -88,7 +88,7 @@ def header_context():
         return {"me": None}
     conn = db.get_db()
     ctx = {"me": user, "pending_count": 0, "sync_warnings": []}
-    if user["role"] in ("owner", "manager"):
+    if user["role"] in ("owner", "admin", "manager"):
         ctx["pending_count"] = len(pending_for(user, conn))
         mine = auth.stores_for(user, conn)
         now = clock.now_local()

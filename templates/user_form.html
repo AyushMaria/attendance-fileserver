@@ -15,7 +15,7 @@
   <div class="field"><label for="dn">Display name</label>
     <input id="dn" type="text" name="display_name" value="{{ form.get('display_name', '') }}" required></div>
   <div class="field"><label>Role</label>
-    {% for value, label in [('cro', 'CRO — requests own leave, sees own attendance'), ('manager', 'Manager — calendars, approvals and weekly offs for their store(s)'), ('owner', 'Owner — everything')] %}
+    {% for value, label in [('cro', 'CRO — requests own leave, sees own attendance'), ('manager', 'Manager — calendars, approvals and weekly offs for their store(s)'), ('admin', 'Admin — sees every location\'s attendance, changes nothing'), ('owner', 'Owner — everything')] %}
       <label class="check" style="display:flex"><input type="radio" name="role" value="{{ value }}" {{ 'checked' if form.get('role', 'cro') == value }}> {{ label }}</label>
     {% endfor %}
   </div>
@@ -75,7 +75,7 @@
 (function () {
   function sync() {
     var r = document.querySelector('input[name=role]:checked'); r = r ? r.value : '';
-    document.getElementById('person-field').style.display = r === 'owner' ? 'none' : '';
+    document.getElementById('person-field').style.display = (r === 'owner' || r === 'admin') ? 'none' : '';
     document.getElementById('stores-field').style.display = r === 'manager' ? '' : 'none';
   }
   document.querySelectorAll('input[name=role]').forEach(function (e) { e.addEventListener('change', sync); });

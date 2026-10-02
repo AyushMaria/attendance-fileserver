@@ -46,7 +46,7 @@ def home():
 # ----------------------------------------------------------------- month
 
 @bp.get("/calendar/<store>")
-@auth.require_role("owner", "manager")
+@auth.require_role("owner", "admin", "manager")
 def month_jump(store):
     require_store(store)
     wanted = request.args.get("m", "")
@@ -58,7 +58,7 @@ def month_jump(store):
 
 
 @bp.get("/day/<store>")
-@auth.require_role("owner", "manager")
+@auth.require_role("owner", "admin", "manager")
 def day_jump(store):
     require_store(store)
     wanted = request.args.get("d", "")
@@ -85,7 +85,7 @@ def parse_month_strict(text):
     return date(y, m, 1)
 
 @bp.get("/calendar/<store>/<month>")
-@auth.require_role("owner", "manager")
+@auth.require_role("owner", "admin", "manager")
 def month(store, month):
     row = require_store(store)
     first = parse_month(month)
@@ -129,7 +129,7 @@ def month(store, month):
 # ----------------------------------------------------------------- day
 
 @bp.get("/day/<store>/<day>")
-@auth.require_role("owner", "manager")
+@auth.require_role("owner", "admin", "manager")
 def day(store, day):
     row = require_store(store)
     d = parse_day(day)

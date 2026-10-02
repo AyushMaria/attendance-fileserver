@@ -17,6 +17,28 @@ from pathlib import Path
 
 from flask import current_app, g
 
+USERS_DDL = """CREATE TABLE IF NOT EXISTS users (
+    id                  INTEGER PRIMARY KEY,
+    username            TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    display_name        TEXT NOT NULL,
+    password_hash       TEXT NOT NULL,
+    role                TEXT NOT NULL CHECK (role IN ('owner','admin','manager','cro')),
+    emp_store           TEXT,
+    emp_user_id         TEXT,
+    active              INTEGER NOT NULL DEFAULT 1,
+    session_version     INTEGER NOT NULL DEFAULT 1,
+    failed_logins       INTEGER NOT NULL DEFAULT 0,
+    locked_until        TEXT,
+    created_at          TEXT NOT NULL,
+    last_login_at       TEXT,
+    last_login_ip       TEXT,
+    password_changed_at TEXT NOT NULL,
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+    -- Owner and Admin logins are not anyone on a device; Managers and CROs are
+    CHECK ((role IN ('owner','admin')) = (emp_user_id IS NULL)),
+    UNIQUE (emp_store, emp_user_id)
+);"""
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stores (
     store          TEXT PRIMARY KEY,
@@ -55,7 +77,7 @@ CREATE TABLE IF NOT EXISTS users (
     username            TEXT NOT NULL UNIQUE COLLATE NOCASE,
     display_name        TEXT NOT NULL,
     password_hash       TEXT NOT NULL,
-    role                TEXT NOT NULL CHECK (role IN ('owner','manager','cro')),
+    role                TEXT NOT NULL CHECK (role IN ('owner','admin','manager','cro')),
     emp_store           TEXT,
     emp_user_id         TEXT,
     active              INTEGER NOT NULL DEFAULT 1,
@@ -67,7 +89,8 @@ CREATE TABLE IF NOT EXISTS users (
     last_login_ip       TEXT,
     password_changed_at TEXT NOT NULL,
     must_change_password INTEGER NOT NULL DEFAULT 0,
-    CHECK ((role = 'owner') = (emp_user_id IS NULL)),
+    -- Owner and Admin logins are not anyone on a device; Managers and CROs are
+    CHECK ((role IN ('owner','admin')) = (emp_user_id IS NULL)),
     UNIQUE (emp_store, emp_user_id)
 );
 
@@ -197,8 +220,50 @@ def init_db(path):
         conn.executescript(SCHEMA)
         migrate(conn)
         conn.commit()
+        try:
+            rebuild_users_for_admin(conn)
+        except Exception as e:  # noqa: BLE001 - rolled back; never stop the site starting
+            print(f"Could not add the Admin role to the accounts table (nothing changed): {e}")
     finally:
         conn.close()
+
+
+def rebuild_users_for_admin(conn):
+    """The users table of the first release only allowed owner/manager/cro.
+    SQLite can't change a CHECK in place, so the table is rebuilt once with
+    the Admin role allowed - same rows, same ids, so every reference to an
+    account (leaves, approvals, activity) stays as it was. Foreign keys are
+    switched off for the swap so nothing cascades, and the write lock keeps
+    the other server process out until it's done."""
+    def current_sql():
+        row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").fetchone()
+        return row["sql"] if row else ""
+    if "'admin'" in current_sql():
+        return False
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        if "'admin'" in current_sql():          # the other process just did it
+            conn.rollback()
+            return False
+        ddl = USERS_DDL.replace("IF NOT EXISTS users", "users_new")
+        conn.execute(ddl)
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(users)")]
+        new_cols = {r["name"] for r in conn.execute("PRAGMA table_info(users_new)")}
+        keep = ", ".join(c for c in cols if c in new_cols)
+        conn.execute(f"INSERT INTO users_new ({keep}) SELECT {keep} FROM users")
+        conn.execute("DROP TABLE users")
+        conn.execute("ALTER TABLE users_new RENAME TO users")
+        bad = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if bad:
+            raise RuntimeError(f"foreign key problems after rebuilding users: {bad[:5]}")
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
 
 
 # Columns added after the first release: (table, column, definition).

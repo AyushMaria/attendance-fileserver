@@ -79,13 +79,14 @@ class Factory:
         self.conn.commit()
 
     def user(self, username, role, store=None, user_id=None, covers=(), active=1):
-        if role != "owner":
+        person = role not in ("owner", "admin")
+        if person:
             self.emp(store, user_id)
         cur = self.conn.execute(
             "INSERT INTO users (username, display_name, password_hash, role, emp_store, emp_user_id, "
             "active, created_at, password_changed_at) VALUES (?,?,?,?,?,?,?,'x','x')",
-            (username, username.title(), FAST_HASH, role, store if role != "owner" else None,
-             str(user_id) if role != "owner" else None, active))
+            (username, username.title(), FAST_HASH, role, store if person else None,
+             str(user_id) if person else None, active))
         for s in covers:
             self.conn.execute("INSERT INTO user_stores (user_id, store) VALUES (?,?)", (cur.lastrowid, s))
         self.conn.commit()

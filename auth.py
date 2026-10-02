@@ -126,7 +126,7 @@ def stores_for(user, conn=None):
     conn = conn or db.get_db()
     if user is None:
         return set()
-    if user["role"] == "owner":
+    if user["role"] in ("owner", "admin"):     # Admin: every store, view only
         return set(all_stores(conn))
     if user["role"] == "manager":
         return {r["store"] for r in conn.execute(

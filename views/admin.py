@@ -436,7 +436,7 @@ def users():
         "SELECT u.*, e.name AS emp_name, "
         "(SELECT GROUP_CONCAT(store, ', ') FROM user_stores s WHERE s.user_id=u.id) AS covers "
         "FROM users u LEFT JOIN employees e ON e.store=u.emp_store AND e.user_id=u.emp_user_id "
-        "ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'manager' THEN 1 ELSE 2 END, "
+        "ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'manager' THEN 2 ELSE 3 END, "
         "active DESC, username").fetchall()
     without = conn.execute(
         "SELECT COUNT(*) FROM employees e LEFT JOIN users u ON u.emp_store=e.store "
@@ -531,13 +531,13 @@ def account_form(conn, editing=None):
     display = request.form.get("display_name", "").strip()
     person = request.form.get("person", "")
     covers = sorted(set(request.form.getlist("stores")))
-    if role not in ("owner", "manager", "cro"):
+    if role not in ("owner", "admin", "manager", "cro"):
         return None, "Choose a role."
     if not display:
         return None, "Give a display name."
     values = {"role": role, "display_name": display, "emp_store": None, "emp_user_id": None,
               "stores": []}
-    if role != "owner":
+    if role not in ("owner", "admin"):
         store, _, uid = person.partition(":")
         emp = conn.execute("SELECT * FROM employees WHERE store=? AND user_id=?",
                            (store, uid)).fetchone()
