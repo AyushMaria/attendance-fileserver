@@ -22,7 +22,7 @@ def world(make, now):
 VIEW = ["/", "/calendar/mall/2026-10", "/calendar/school/2026-10", "/day/mall/2026-10-05",
         "/day/school/2026-10-05", "/person/mall/101/2026-10", "/person/school/7/2026-10", "/account",
         "/calendar/mall", "/day/school"]
-NO = ["/approvals", "/staff", "/stores", "/users", "/users/new", "/audit", "/archive", "/backup",
+NO = ["/approvals", "/stores", "/users", "/users/new", "/audit", "/archive", "/backup",
       "/stores/school/tally", "/stores/mall/names", "/leave"]
 
 
@@ -58,7 +58,7 @@ def test_admin_page_has_no_edit_controls(world, as_user):
     month = c.get("/calendar/mall/2026-10").data.decode()
     assert "&#34;edit&#34;: true" not in month
     nav = c.get("/").data.decode()
-    for word in (">Approvals", ">Weekly offs", ">Stores", ">Accounts", ">Activity", ">Archive"):
+    for word in (">Approvals", ">Stores", ">Accounts", ">Activity", ">Archive"):
         assert word not in nav
     assert "Mark present" not in c.get("/day/mall/2026-10-05").data.decode()
 
@@ -175,7 +175,7 @@ def test_admin_limited_to_ticked_stores(world, as_user, conn, make):
     assert c.get("/person/school/7/2026-10").status_code == 404
     home = c.get("/").data.decode()
     assert "Mall" in home and "School" not in home
-    for path in ("/approvals", "/staff", "/leave"):
+    for path in ("/approvals", "/leave"):
         assert c.get(path).status_code == 404, path
     for path, data in [("/approvals/%d/decide" % world["leave"], {"decision": "approve"}),
                        ("/approvals/record", {"person": "mall:101", "from": "2026-10-11", "to": "2026-10-11"}),
@@ -199,3 +199,19 @@ def test_manager_switched_to_admin(world, as_user, conn, make):
     assert sorted(r[0] for r in conn.execute("SELECT store FROM user_stores WHERE user_id=?", (uid,))) \
         == ["mall", "nirala"]
     assert as_user(uid).get("/approvals").status_code == 404
+
+
+def test_admin_sees_weekly_offs_of_their_stores_only(world, as_user, conn, make):
+    make.store("nirala")
+    make.punch("nirala", 5, "2026-10-05 09:00:00")
+    conn.execute("INSERT INTO weekly_offs (store, user_id, weekdays, effective_from, set_by, set_at) "
+                 "VALUES ('mall','101','1','2026-09-01',?, 'x')", (world["owner"],))
+    conn.execute("INSERT INTO user_stores (user_id, store) VALUES (?, 'mall')", (world["admin"],))
+    conn.commit()
+    c = as_user(world["admin"])
+    page = c.get("/staff").data.decode()
+    assert "Mall" in page and "Tue" in page and "Nirala" not in page and "School" not in page
+    assert "/staff/weekly-off" not in page and "Change</summary>" not in page and "Owner sets this" not in page
+    assert "Login</th>" not in page and ">Weekly offs" in c.get("/").data.decode()
+    assert c.post("/staff/weekly-off", data={"person": "mall:101", "days": ["6"],
+                                             "from": "2026-10-01"}).status_code == 404

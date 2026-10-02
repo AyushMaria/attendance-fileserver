@@ -698,7 +698,7 @@ def user_action(uid, action):
 # ----------------------------------------------------------------- weekly offs
 
 @bp.get("/staff")
-@auth.require_role("owner", "manager")
+@auth.require_role("owner", "manager", "admin")     # Admin: view only, their stores
 def staff():
     conn = db.get_db()
     now = clock.now_local()

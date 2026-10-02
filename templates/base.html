@@ -19,6 +19,8 @@
     {% endif %}
     {% if me.role in ('owner', 'manager') %}
       <a href="{{ url_for('leave.approvals') }}" class="{{ 'on' if ep == 'leave.approvals' }}">Approvals{% if pending_count %}<span class="badge">{{ pending_count }}</span>{% endif %}</a>
+    {% endif %}
+    {% if me.role in ('owner', 'manager', 'admin') %}
       <a href="{{ url_for('admin.staff') }}" class="{{ 'on' if ep == 'admin.staff' }}">Weekly offs</a>
     {% endif %}
     {% if me.role == 'owner' %}
