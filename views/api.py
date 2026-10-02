@@ -6,6 +6,7 @@ so the mall key can never write nirala data, whatever is sent.
 """
 
 import hashlib
+import re
 import hmac
 from datetime import datetime, timedelta
 
@@ -18,6 +19,10 @@ from attendance import MIN_DATE
 bp = Blueprint("api", __name__)
 
 MAX_PUNCHES = 5000
+
+# What the device-reading library reports for someone with no name stored
+# on the device, e.g. "NN-12". Never a real name.
+PLACEHOLDER_NAME = re.compile(r"NN-\d+")
 
 
 def hash_key(key):
@@ -94,7 +99,10 @@ def sync():
     people = []
     for s in staff:
         try:
-            people.append((str(s["user_id"]).strip(), str(s.get("name") or "").strip()[:100]))
+            name = str(s.get("name") or "").strip()[:100]
+            if PLACEHOLDER_NAME.fullmatch(name):
+                name = ""          # no name stored on the device (the reader says "NN-12")
+            people.append((str(s["user_id"]).strip(), name))
         except (KeyError, TypeError, AttributeError):
             return jsonify({"error": f"Staff entry not understood: {s!r:.200}"}), 400
     if any(not uid or len(uid) > 32 for uid, _ in people):
@@ -113,7 +121,8 @@ def sync():
             conn.execute(
                 "INSERT INTO employees (store, user_id, name, on_device, first_seen, last_seen) "
                 "VALUES (?,?,?,1,?,?) ON CONFLICT(store, user_id) DO UPDATE SET "
-                "name=CASE WHEN excluded.name != '' THEN excluded.name ELSE employees.name END, "
+                "name=CASE WHEN employees.name_locked=1 THEN employees.name "
+                "WHEN excluded.name != '' THEN excluded.name ELSE employees.name END, "
                 "on_device=1, last_seen=excluded.last_seen",
                 (store, uid, name, received, received))
         # never delete anyone: people removed from the device keep their history

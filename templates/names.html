@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Staff names · {{ store.display_name }}{% endblock %}
+{% block body %}
+<h1>Staff names · {{ store.display_name }}</h1>
+<p class="sub">The name each person has on this website. A name you type here is kept even if the device
+  has a different one or none at all. {% if missing %}<b>{{ missing }}</b> people have no name yet.{% endif %}</p>
+
+<form method="post">
+  {{ csrf() }}
+  <div class="card" style="margin-bottom:14px">
+    <label for="bulk"><b>Paste a list</b> (optional) — one person per line: device number, then name</label>
+    <textarea id="bulk" name="bulk" rows="6" placeholder="12, Ravi Kumar&#10;17, Sana Khan&#10;21 - Deepak Patel"></textarea>
+    <p class="small muted" style="margin:4px 0 0">Copy two columns straight from Excel (number and name) and paste them here.
+      Pasted names win over the boxes below.</p>
+  </div>
+  <div class="scroll"><table class="list">
+    <thead><tr><th>#</th><th>Name</th><th></th></tr></thead>
+    <tbody>
+    {% for p in people %}
+      <tr style="{{ 'opacity:.6' if not p.on_device }}">
+        <td class="num">{{ p.user_id }}</td>
+        <td><input type="text" name="name_{{ p.user_id }}" value="{{ p.name }}" maxlength="100"
+                   placeholder="no name" aria-label="Name for #{{ p.user_id }}" style="max-width:320px"></td>
+        <td class="small muted">{% if p.name_locked %}typed here{% elif p.name %}from the device{% endif %}
+          {% if not p.on_device %} · no longer on the device{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <div style="margin-top:12px"><button type="submit">Save names</button>
+    <a class="btn plain" href="{{ url_for('admin.stores') }}#s-{{ store.store }}">Back to Stores</a></div>
+</form>
+{% endblock %}

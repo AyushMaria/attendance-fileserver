@@ -23,12 +23,11 @@ def test_bulk_creates_cro_logins(app, conn, make, as_user):
     make.user("rahul", "manager", "mall", 102, covers=["mall"])
     r = as_user(owner).post("/users/bulk-cro", data={"password": "tmpl@2026"})
     body = r.data.decode()
-    assert "3 CRO logins created" in body and "tmpl@2026" in body
+    assert "2 CRO logins created" in body and "tmpl@2026" in body and "1 skipped" in body
     rows = conn.execute("SELECT username, role, emp_store, emp_user_id, must_change_password FROM users "
                         "WHERE role='cro' ORDER BY id").fetchall()
     assert [tuple(r) for r in rows] == [("aditi101", "cro", "mall", "101", 1),
-                                        ("aditi101.nirala", "cro", "nirala", "101", 1),
-                                        ("staff205", "cro", "nirala", "205", 1)]
+                                        ("aditi101.nirala", "cro", "nirala", "101", 1)]
     # pressing it again adds nobody
     r = as_user(owner).post("/users/bulk-cro", data={"password": "tmpl@2026"})
     assert "0 CRO logins created" in r.data.decode()
@@ -144,3 +143,52 @@ def test_ayush_hidden_once_when_upgrading(tmp_path):
     conn.commit()
     db.init_db(str(path))                              # never again after the first time
     assert conn.execute("SELECT SUM(hidden) FROM employees").fetchone()[0] == 0
+
+
+def test_nn_placeholders_ignored_and_typed_names_kept(app, conn, make, as_user):
+    from views.api import hash_key
+    make.store("office", key="office-key-" + "x" * 30)
+    owner = make.user("boss", "owner")
+    c = app.test_client()
+    h = {"Authorization": "Bearer office-key-" + "x" * 30}
+    c.post("/api/sync", json={"staff": [{"user_id": "12", "name": "NN-12"},
+                                        {"user_id": "17", "name": "NN-17"}], "punches": []}, headers=h)
+    assert {r[0]: r[1] for r in conn.execute("SELECT user_id, name FROM employees")} == {"12": "", "17": ""}
+    o = as_user(owner)
+    o.post("/stores/office/names", data={"name_12": "Ravi Kumar", "bulk": "17, Sana Khan\n99, Nobody"})
+    names = {r[0]: (r[1], r[2]) for r in conn.execute("SELECT user_id, name, name_locked FROM employees")}
+    assert names == {"12": ("Ravi Kumar", 1), "17": ("Sana Khan", 1)}
+    # the next sync, still with placeholders - or even a device name - keeps them
+    c.post("/api/sync", json={"staff": [{"user_id": "12", "name": "NN-12"},
+                                        {"user_id": "17", "name": "SANA"}], "punches": []}, headers=h)
+    assert {r[0]: r[1] for r in conn.execute("SELECT user_id, name FROM employees")} == \
+        {"12": "Ravi Kumar", "17": "Sana Khan"}
+    assert "Ravi Kumar" in o.get("/stores/office/names").data.decode()
+
+
+def test_bulk_skips_people_without_names(app, conn, make, as_user):
+    make.store("office")
+    owner = make.user("boss", "owner")
+    make.emp("office", 12, "Ravi Kumar")
+    make.emp("office", 13)
+    conn.execute("UPDATE employees SET name='' WHERE user_id='13'")
+    conn.commit()
+    body = as_user(owner).post("/users/bulk-cro", data={"password": "tmpl@2026"}).data.decode()
+    assert "ravi12" in body and "1 skipped" in body
+    assert conn.execute("SELECT COUNT(*) FROM users WHERE emp_user_id='13'").fetchone()[0] == 0
+
+
+def test_old_nn_names_cleared_on_upgrade(tmp_path):
+    import sqlite3
+    import db
+    path = tmp_path / "old.db"
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE employees (store TEXT, user_id TEXT, name TEXT, on_device INTEGER,
+                                first_seen TEXT, last_seen TEXT, PRIMARY KEY (store, user_id));
+        INSERT INTO employees VALUES ('office','12','NN-12',1,'x','x'), ('mall','3','Imran',1,'x','x');""")
+    conn.commit()
+    conn.close()
+    db.init_db(str(path))
+    conn = db.connect(str(path))
+    assert {r["user_id"]: r["name"] for r in conn.execute("SELECT * FROM employees")} == {"12": "", "3": "Imran"}

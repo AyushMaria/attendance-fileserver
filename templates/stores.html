@@ -23,7 +23,7 @@
         {% if not r.sync_key_hash %}<span class="pill bad">no sync key yet</span>
         {% else %}<span class="{{ 'pill warn' if s.stale else 'pill good' }}">synced {{ r.last_sync_at|ago }}</span>{% endif %}
         {% if r.last_sync_note %}<span class="muted"> · {{ r.last_sync_note }}</span>{% endif %}
-        <span class="muted"> · {{ s.staff }} on device</span>
+        <span class="muted"> · {{ s.staff }} on device · <a href="{{ url_for('admin.staff_names', store=r.store) }}">names</a></span>
       </span>
     </div>
     {% if r.clock_warning %}<div class="msg warn" style="margin-top:8px">{{ r.clock_warning }}</div>{% endif %}

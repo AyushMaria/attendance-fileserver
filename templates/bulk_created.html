@@ -15,7 +15,9 @@
 </table></div>
 {% endif %}
 {% if skipped %}
-<div class="msg warn" style="margin-top:14px">No username could be made for: {% for e in skipped %}{{ e.store }} #{{ e.user_id }} {{ e.name }}{{ ', ' if not loop.last }}{% endfor %}. Create those by hand.</div>
+<div class="msg warn" style="margin-top:14px"><b>{{ skipped|length }} skipped</b> - no name yet, or no username could be made:
+  {% for e in skipped[:40] %}{{ e.store }} #{{ e.user_id }}{{ ' ' ~ e.name if e.name }}{{ ', ' if not loop.last }}{% endfor %}{% if skipped|length > 40 %} …{% endif %}.
+  Give them names on Stores &rarr; <i>names</i>, then press Create CRO logins again.</div>
 {% endif %}
 <p style="margin-top:16px">To make someone a Manager, open their account from <a href="{{ url_for('admin.users') }}">Accounts</a>, change the role and tick their stores.</p>
 <p class="small muted">Tell each person: “This is your login for leave requests. Don't share it — requests are recorded under your name.”</p>

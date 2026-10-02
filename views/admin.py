@@ -252,6 +252,52 @@ def leave_tally(store):
                            year_start=year_start, today=today)
 
 
+BULK_LINE = re.compile(r"^\s*#?\s*([A-Za-z0-9]+)\s*[,;:\t=\-–]+\s*(.+?)\s*$")
+
+
+@bp.route("/stores/<store>/names", methods=["GET", "POST"])
+@auth.require_role("owner")
+def staff_names(store):
+    """Names for the people on a device - for a device with no names stored
+    on it (the office). A name set here is never overwritten by the sync."""
+    conn = db.get_db()
+    row = store_row(store)
+    people = conn.execute("SELECT * FROM employees WHERE store=? AND hidden=0 "
+                          "ORDER BY CAST(user_id AS INTEGER), user_id", (store,)).fetchall()
+    known = {p["user_id"]: p for p in people}
+    if request.method == "POST":
+        wanted = {}
+        for uid in known:
+            if f"name_{uid}" in request.form:
+                wanted[uid] = request.form.get(f"name_{uid}", "").strip()[:100]
+        unknown = []
+        for line in request.form.get("bulk", "").splitlines():
+            if not line.strip():
+                continue
+            m = BULK_LINE.match(line)
+            if not m or m.group(1) not in known:
+                unknown.append(line.strip()[:60])
+                continue
+            wanted[m.group(1)] = m.group(2).strip()[:100]
+        changed = 0
+        for uid, name in wanted.items():
+            p = known[uid]
+            if name == (p["name"] or ""):
+                continue
+            conn.execute("UPDATE employees SET name=?, name_locked=? WHERE store=? AND user_id=?",
+                         (name, 1 if name else 0, store, uid))
+            changed += 1
+        db.audit(conn, g.user["id"], "staff.names", store, {"changed": changed}, ip())
+        conn.commit()
+        flash(f"Saved {changed} name{'s' if changed != 1 else ''}.", "ok")
+        if unknown:
+            flash("Not understood or no such number on the device: " + "; ".join(unknown[:10])
+                  + (" …" if len(unknown) > 10 else ""), "error")
+        return redirect(url_for("admin.staff_names", store=store))
+    missing = sum(1 for p in people if not p["name"])
+    return render_template("names.html", store=row, people=people, missing=missing)
+
+
 MAX_SHIFTS = 6
 
 
@@ -457,6 +503,9 @@ def bulk_cro():
     now = db.utc_now_iso()
     created, skipped = [], []
     for e in people:
+        if not (e["name"] or "").strip():
+            skipped.append(e)            # name them first (Stores > names)
+            continue
         first = (e["name"] or "").split()[0] if (e["name"] or "").split() else ""
         username = username_for(conn, first, e["store"], e["user_id"], taken)
         if username is None:

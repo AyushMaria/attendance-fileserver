@@ -214,6 +214,9 @@ ADDED_COLUMNS = [
     # someone on a device who isn't staff (the Owner enrolled as an admin):
     # left out of every calendar, count and account creation
     ("employees", "hidden", "INTEGER NOT NULL DEFAULT 0"),
+    # a name typed in on the website (the office device has no names):
+    # the device sync never overwrites it
+    ("employees", "name_locked", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 
@@ -230,6 +233,9 @@ def migrate(conn):
             if "duplicate column" not in str(e):
                 raise
             continue
+        if (table, column) == ("employees", "name_locked"):
+            # "NN-12" is the reader's placeholder for "no name on the device"
+            conn.execute("UPDATE employees SET name='' WHERE name GLOB 'NN-[0-9]*'")
         if (table, column) == ("employees", "hidden"):
             # One time, when hiding arrives: the Owner is enrolled on every
             # device as its admin under the name Ayush, and asked for those
