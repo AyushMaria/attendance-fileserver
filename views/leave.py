@@ -288,6 +288,35 @@ def withdraw(leave_id):
     return redirect(url_for("leave.approvals"))
 
 
+@bp.post("/leave/<int:leave_id>/revoke")
+@auth.require_role("owner")
+def revoke(leave_id):
+    """The Owner cancels a leave that was approved (by anyone, at any time).
+    The leave is then ignored, so its days count from the punches as if it
+    had never been asked for. Its history stays in the activity log."""
+    conn = db.get_db()
+    row = leave_for_action(conn, leave_id)
+    reason = request.form.get("reason", "").strip()[:MAX_COMMENT]
+    back = request.form.get("back", "")
+    if not back.startswith("/") or back.startswith("//"):
+        back = url_for("leave.approvals")
+    if row["status"] != "approved":
+        flash("Only an approved leave can be cancelled.", "error")
+    elif not reason:
+        flash("Give a reason for cancelling the leave.", "error")
+    else:
+        conn.execute("UPDATE leaves SET status='cancelled', manager_comment=?, decided_by=?, "
+                     "decided_at=? WHERE id=? AND status='approved'",
+                     (f"cancelled: {reason}", g.user["id"], db.utc_now_iso(), leave_id))
+        db.audit(conn, g.user["id"], "leave.revoke", f"leave:{leave_id}",
+                 {"store": row["store"], "user_id": row["user_id"], "from": row["start_date"],
+                  "to": row["end_date"], "approved_by": row["decided_by"], "reason": reason},
+                 auth.client_ip())
+        conn.commit()
+        flash("Leave cancelled.", "ok")
+    return redirect(back)
+
+
 def form_person(conn):
     """The person chosen in a form, as (store, user_id) - checked."""
     raw = request.form.get("person", "")

@@ -79,7 +79,15 @@
       <td class="nowrap">{{ span(r.start_date, r.end_date) }}</td>
       <td>{{ status_pill(r.status) }} <span class="small muted">by {{ r.decided_by_name or '?' }}</span></td>
       <td>“{{ r.staff_comment }}”{% if r.manager_comment %}<div class="small muted">{{ r.manager_comment }}</div>{% endif %}</td>
-      <td>{% if r.status == 'approved' %}
+      <td>{% if r.status == 'approved' and me.role == 'owner' %}
+        <details class="more"><summary>Cancel</summary>
+          <form method="post" action="{{ url_for('leave.revoke', leave_id=r.id) }}" style="margin-top:6px;min-width:200px"
+                onsubmit="return confirm('Cancel this approved leave? Its days will count from the punches again.');">
+            {{ csrf() }}<input type="hidden" name="back" value="{{ request.full_path }}">
+            <input type="text" name="reason" placeholder="Why (required)" required maxlength="300">
+            <button class="small danger" type="submit" style="margin-top:6px">Cancel leave</button>
+          </form></details>
+        {% elif r.status == 'approved' %}
         <details class="more"><summary>Withdraw</summary>
           <form method="post" action="{{ url_for('leave.withdraw', leave_id=r.id) }}" style="margin-top:6px;min-width:200px">
             {{ csrf() }}<input type="text" name="reason" placeholder="Why (required)" required maxlength="300">

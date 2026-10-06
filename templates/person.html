@@ -95,6 +95,14 @@
       <td class="nowrap">{{ span(l.start_date, l.end_date) }}</td>
       <td>{{ status_pill(l.status) }}</td>
       <td>{{ l.staff_comment }}{% if l.manager_comment %}<div class="small muted">— {{ l.decided_by_name or '' }}: “{{ l.manager_comment }}”</div>{% endif %}</td>
+      {% if me.role == 'owner' %}<td>{% if l.status == 'approved' %}
+        <details class="more"><summary>Cancel</summary>
+          <form method="post" action="{{ url_for('leave.revoke', leave_id=l.id) }}" style="margin-top:6px;min-width:200px"
+                onsubmit="return confirm('Cancel this approved leave? Its days will count from the punches again.');">
+            {{ csrf() }}<input type="hidden" name="back" value="{{ request.full_path }}">
+            <input type="text" name="reason" placeholder="Why (required)" required maxlength="300">
+            <button class="small danger" type="submit" style="margin-top:6px">Cancel leave</button>
+          </form></details>{% endif %}</td>{% endif %}
     </tr>
   {% endfor %}
   </tbody>
