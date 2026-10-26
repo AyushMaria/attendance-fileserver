@@ -25,10 +25,12 @@
     {% for c in week %}
       {% if c is none %}<td class="pad"></td>
       {% else %}
-      <td class="{{ 'is-today' if c.day == today }}" title="{{ CODE_LABELS.get(c.code, '') }}{% if c.note %} — {{ c.note }}{% endif %}{% if c.comp_note %} · {{ c.comp_note }}{% endif %}{% if c.shift and c.shift.name %} · {{ c.shift.label }} shift{% endif %}">
+      <td class="{{ 'is-today' if c.day == today }}" title="{{ CODE_LABELS.get(c.code, '') }}{% if c.note %} — {{ c.note }}{% endif %}{% if c.comp_note %} · {{ c.comp_note }}{% endif %}{% if c.shift and c.shift.name %} · {{ c.shift.label }} shift{% endif %}{% if c.punch_flag %} · {{ c.punch_flag_text }}{% endif %}">
         <div class="d">{{ c.day.day }}</div>
-        {% if c.code %}{{ badge(c.code, c.comp_earned) }}{% elif c.leave and c.leave.status in ('approved','pending') %}<span class="small muted">{{ 'leave' if c.leave.status == 'approved' else 'requested' }}</span>{% elif c.weekly_off %}<span class="small muted">off</span>{% endif %}
+        {% set f = c.punch_flag %}
+        {% if c.code %}<span class="pfwrap" style="display:inline-block">{{ badge(c.code, c.comp_earned) }}{% if f %}<sub class="pf pf-{{ f[0] }}" title="{{ c.punch_flag_text }}">{{ '!' if f[0] == 'single' else f[1] }}</sub>{% endif %}</span>{% elif c.leave and c.leave.status in ('approved','pending') %}<span class="small muted">{{ 'leave' if c.leave.status == 'approved' else 'requested' }}</span>{% elif c.weekly_off %}<span class="small muted">off</span>{% endif %}
         {% if c.punches %}<div class="t">{{ c.punches[0].strftime('%H:%M') }}{% if c.last %}–{{ c.last.strftime('%H:%M') }}{% endif %}</div>{% endif %}
+        {% if f %}<div class="t pfnote">{{ 'no check-out' if f[0] == 'single' else f[1] ~ ' punches' }}</div>{% endif %}
       </td>
       {% endif %}
     {% endfor %}

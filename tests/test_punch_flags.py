@@ -52,3 +52,14 @@ def test_month_page_shows_the_marks(conn, make, now, as_user):
     assert 'class="pf pf-single"' in page and '>!</sub>' in page
     assert 'class="pf pf-multi" title="4 punches' in page
     assert "checked in, no check-out" in page
+
+
+def test_person_page_shows_the_marks(conn, make, now, as_user):
+    setup(make)
+    owner = conn.execute("SELECT id FROM users WHERE username='owner'").fetchone()[0]
+    make.punch("mall", 101, "2026-10-05 09:00:00")
+    for t in ("09:00", "13:00", "14:00", "18:00"):
+        make.punch("mall", 101, f"2026-10-06 {t}:00")
+    page = as_user(owner).get("/person/mall/101/2026-10").data.decode()
+    assert 'class="pf pf-single"' in page and "no check-out" in page
+    assert 'class="pf pf-multi"' in page and "4 punches" in page

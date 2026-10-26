@@ -173,3 +173,5 @@ table.cal .t { color: var(--muted); font-size: 11.5px; font-variant-numeric: tab
 .pill.good { background: var(--ok-bg); color: var(--ok-fg); }
 .secret { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 16px;
   background: #fff; border: 1px dashed #b8bfca; border-radius: 8px; padding: 10px 12px; word-break: break-all; user-select: all; }
+/* on a person's own calendar there's room: put the flag beside the code */
+table.cal .pf { position: static; display: inline-block; margin-left: 4px; vertical-align: middle; box-shadow: none; }
