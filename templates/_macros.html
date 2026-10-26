@@ -19,6 +19,8 @@
   <span>{{ badge('NOT_IN_YET') }}not in yet</span><span>{{ badge('NODATA') }}no punches at the store</span>
   {% if show_plus and show_co %}<span>{{ badge('P', true) }}worked a weekly off, earned a comp-off</span>{% endif %}
   <span><span class="code k-P">P<sup style="color:#1f3a5f">✎</sup></span> corrected by hand</span>
+  <span><span class="code k-P pfwrap">P<sub class="pf pf-single">!</sub></span> checked in, no check-out</span>
+  <span><span class="code k-P pfwrap">P<sub class="pf pf-multi">4</sub></span> punched more than twice (the number of punches)</span>
 </div>
 {% endmacro %}
 

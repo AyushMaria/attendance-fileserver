@@ -42,7 +42,7 @@
               'title': (p.name or p.user_id) ~ ' · ' ~ (c.day|dayfmt),
               'code': CODE_LABELS.get(c.code, ''),
               'times': c.punches|map('strftime_hm')|join(', '),
-              'no_out': c.no_checkout,
+              'flag': c.punch_flag_text,
               'note': c.note, 'comp': c.comp_note,
               'by': (c.leave.decided_by_name if c.leave and c.leave.status == 'approved' else ''),
               'wo': c.weekly_off,
@@ -50,7 +50,7 @@
               'person': store.store ~ ':' ~ p.user_id, 'day': c.day.isoformat(),
               'edit': me.role == 'owner', 'manual': c.manual is not none } %}
           <td><button type="button" class="cellbtn code {{ kcls(c.code) }}" data-info="{{ info|tojson|forceescape }}"
-              aria-label="{{ info.title }}: {{ info.code }}">{{ short(c.code) }}{% if c.comp_earned %}<sup>+</sup>{% endif %}{% if c.manual %}<sup title="corrected by hand" style="color:#1f3a5f">✎</sup>{% endif %}</button></td>
+              aria-label="{{ info.title }}: {{ info.code }}">{{ short(c.code) }}{% if c.comp_earned %}<sup>+</sup>{% endif %}{% if c.manual %}<sup title="corrected by hand" style="color:#1f3a5f">✎</sup>{% endif %}{% set f = c.punch_flag %}{% if f %}<sub class="pf pf-{{ f[0] }}" title="{{ c.punch_flag_text }}">{{ '!' if f[0] == 'single' else f[1] }}</sub>{% endif %}</button></td>
         {% else %}<td></td>{% endif %}
       {% endfor %}
       {% set t = r.totals %}
@@ -105,7 +105,8 @@
       body.appendChild(el('b', i.title));
       body.appendChild(el('div', i.code + (i.wo && i.code !== 'Weekly off' ? ' · weekly off day' : '')));
       if (i.shift) body.appendChild(el('div', 'Counted on the ' + i.shift + ' shift', 'muted'));
-      if (i.times) body.appendChild(el('div', 'Punches: ' + i.times + (i.no_out ? ' (no check-out)' : ''), 'muted'));
+      if (i.times) body.appendChild(el('div', 'Punches: ' + i.times, 'muted'));
+      if (i.flag) body.appendChild(el('div', i.flag, 'pfnote'));
       if (i.note) body.appendChild(el('div', i.note));
       if (i.by) body.appendChild(el('div', 'Approved by ' + i.by, 'muted'));
       if (i.comp) body.appendChild(el('div', i.comp));

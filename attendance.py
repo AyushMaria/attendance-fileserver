@@ -22,6 +22,8 @@ import db
 
 PRIORITY = {"approved": 0, "pending": 1, "rejected": 2}   # cancelled is ignored
 
+DOUBLE_TAP = timedelta(minutes=5)     # punches this close together count as one
+
 CODE_LABELS = {
     "P": "Present", "LT": "Late", "WO": "Weekly off", "L": "Leave",
     "CO": "Comp-off", "A*": "Leave pending", "A": "Absent",
@@ -144,6 +146,7 @@ class Cell:
     weekly_off: bool = False
     shift: "Shift | None" = None     # the shift they were counted on (days they came in)
     manual: dict | None = None       # a correction made by hand: code, note, by, at
+    day_over: bool = True            # False for today before closing time
 
     @property
     def first(self):
@@ -154,8 +157,40 @@ class Cell:
         return self.punches[-1] if len(self.punches) > 1 else None
 
     @property
+    def taps(self):
+        """The punches, with any within DOUBLE_TAP of the one before counted
+        once - a double tap at the machine isn't a second check-in."""
+        out = []
+        for t in self.punches:
+            if not out or t - out[-1] > DOUBLE_TAP:
+                out.append(t)
+        return out
+
+    @property
     def no_checkout(self):
-        return len(self.punches) == 1
+        return len(self.taps) == 1 and self.day_over
+
+    @property
+    def punch_flag(self):
+        """None, or ('single', 1) for a check-in with no check-out, or
+        ('multi', n) for more than two punches (in and out during the day)."""
+        n = len(self.taps)
+        if n == 1 and self.day_over:
+            return ("single", 1)
+        if n > 2:
+            return ("multi", n)
+        return None
+
+    @property
+    def punch_flag_text(self):
+        f = self.punch_flag
+        if f is None:
+            return ""
+        if f[0] == "single":
+            return "Only one punch - no check-out"
+        if f[1] % 2:
+            return f"{f[1]} punches - in and out during the day, and the last check-out may be missing"
+        return f"{f[1]} punches - went out and came back during the day"
 
 
 @dataclass
@@ -661,7 +696,8 @@ class StoreData:
             return Cell(day, "NODATA", "no punches from anyone at the store", weekly_off=on_wo)
         leaves = self.leaves_for(uid)
         code, note = day_status(day, bool(punches), wo.days_on(day), leaves)
-        c = Cell(day, code, note, punches, active_leave(day, leaves), weekly_off=on_wo)
+        c = Cell(day, code, note, punches, active_leave(day, leaves), weekly_off=on_wo,
+                 day_over=day < self.today or self.now.time() >= self.rules.day_end)
         if code == "L" and day in matches:
             c.code = "CO"
             c.comp_note = f"covered by weekly off worked {fmt_day(matches[day])}"

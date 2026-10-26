@@ -124,6 +124,13 @@ table.grid tfoot td { color: var(--muted); font-size: 12px; border-bottom: 0; }
 .cellbtn { border: 0; padding: 0; min-width: 28px; line-height: 22px; font-size: 11.5px; position: relative;
   border-radius: 4px; cursor: pointer; font-weight: 650; }
 .cellbtn sup { position: absolute; top: -3px; right: 1px; font-size: 11px; color: #0f766e; }
+/* punch flags: ! = checked in, never out; a number = punched more than twice */
+.pfwrap { position: relative; }
+.pf { position: absolute; bottom: -4px; left: -3px; min-width: 11px; height: 11px; line-height: 11px; padding: 0 2px;
+  border-radius: 6px; font-size: 8.5px; font-weight: 800; color: #fff; text-align: center; box-shadow: 0 0 0 1.5px #fff; }
+.pf-single { background: #c2410c; }
+.pf-multi { background: #1d4ed8; }
+.pfnote { color: #9a3412; font-weight: 600; }
 .panel { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(420px, calc(100% - 32px));
   background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(15,23,42,.18);
   padding: 14px 16px; z-index: 20; font-size: 14px; }
